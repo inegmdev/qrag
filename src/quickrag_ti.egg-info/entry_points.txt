@@ -1,0 +1,2 @@
+[console_scripts]
+quickrag-ti = quickrag_ti.cli:cli

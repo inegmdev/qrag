@@ -1,0 +1,11 @@
+2026-05-13 — Issue 001 complete: project scaffold + search-code E2E verified.
+
+All code was pre-authored (pyproject.toml, src/quickrag_ti/{cli,database,embedder,chunker,config}.py,
+tests/fixtures/sample.c). Verified E2E:
+  - `quickrag-ti prepare --soc AM62x --sdk tests/fixtures --output v0.0-fixture`
+    → 8 chunks extracted and embedded via all-MiniLM-L6-v2, stored in code.db via sqlite-vec
+  - `quickrag-ti search-code "enable error correction"`
+    → returns enable_ecc (score=0.543) as top result, ranked correctly
+All acceptance criteria in issues/001-scaffold-search-code-e2e.md are met.
+
+Next: Issue 002 — `prepare --sdk` with tree-sitter C parsing (blocked on 001, now unblocked).

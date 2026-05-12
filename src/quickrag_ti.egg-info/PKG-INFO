@@ -1,0 +1,8 @@
+Metadata-Version: 2.4
+Name: quickrag-ti
+Version: 0.1.0
+Summary: Semantic + structural code/doc indexing for TI SDK LLM agents
+Requires-Python: >=3.10
+Requires-Dist: click>=8.1
+Requires-Dist: sentence-transformers>=3.0
+Requires-Dist: sqlite-vec>=0.1.6
