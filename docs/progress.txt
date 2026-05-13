@@ -31,3 +31,26 @@ Verified on toy fixture:
   - Large-function split test: 200-line/600-token fn → 2 sub-chunks with 64-token overlap
 
 Next: Issue 003 — `prepare --docs` with PDF/HTML parsing (unblocked, parallel with 002).
+
+2026-05-13 — Issue 003 complete: PDF/HTML doc parsing + search-trm E2E verified.
+
+Changes:
+  - doc_parser.py: PyMuPDF PDF parser (font-size heading detection: h1 >= 1.4x median,
+    h2 >= 1.15x median); BeautifulSoup HTML parser (h1/h2/h3 chunking, nav/footer stripped);
+    _extract_tags extracts ALL-CAPS abbreviations as feature_tags; _split_section handles
+    sections >512 tokens with 64-token overlap
+  - database.py: init_docs_db(), delete_sections_for_source() (upsert), insert_doc_section(),
+    search_docs() — all operating on docs.db / vec_docs virtual table
+  - config.py: docs_db_path() added
+  - cli.py: prepare gains --docs flag (independent of --sdk); search-trm command added
+  - pyproject.toml: pymupdf>=1.24, html2text>=2024.2, beautifulsoup4>=4.12 added
+  - tests/fixtures/sample_trm.pdf + sample_trm.html: synthetic AM62x TRM fixtures (6+7 sections)
+
+Verified E2E:
+  - `quickrag-ti prepare --soc AM62x --docs tests/fixtures --output v0.0-fixture`
+    → 13 sections extracted (6 PDF + 7 HTML), embedded, stored in docs.db
+  - `quickrag-ti search-trm "ECC SRAM configuration"` → ECC sections ranked top (score ~0.61-0.69)
+    with page references and feature_tags
+  - Re-run keeps count at 13 (upsert working)
+
+Next: Issue 004 — database distribution via GitHub Releases (blocked on 002+003, now unblocked).
