@@ -116,6 +116,117 @@ def get_symbol(db_path: Path, name: str) -> dict | None:
     return dict(row)
 
 
+def init_docs_db(db_path: Path) -> None:
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    db = _open(db_path)
+    db.executescript(f"""
+        CREATE TABLE IF NOT EXISTS doc_sections (
+            id           INTEGER PRIMARY KEY,
+            source_path  TEXT,
+            soc_name     TEXT,
+            doc_type     TEXT,
+            chapter      INTEGER,
+            section      INTEGER,
+            subsection   TEXT,
+            title        TEXT,
+            content      TEXT,
+            page_range   TEXT,
+            feature_tags TEXT
+        );
+        CREATE VIRTUAL TABLE IF NOT EXISTS vec_docs USING vec0(
+            section_id INTEGER,
+            embedding float[{EMBEDDING_DIM}] distance_metric=cosine
+        );
+    """)
+    db.commit()
+    db.close()
+
+
+def delete_sections_for_source(db_path: Path, source_path: str) -> None:
+    """Remove all doc_sections and vectors for a source file (upsert support)."""
+    db = _open(db_path)
+    rows = db.execute(
+        "SELECT id FROM doc_sections WHERE source_path = ?", (source_path,)
+    ).fetchall()
+    ids = [r["id"] for r in rows]
+    if ids:
+        placeholders = ",".join("?" * len(ids))
+        db.execute(f"DELETE FROM vec_docs WHERE section_id IN ({placeholders})", ids)
+        db.execute(f"DELETE FROM doc_sections WHERE id IN ({placeholders})", ids)
+    db.commit()
+    db.close()
+
+
+def insert_doc_section(
+    db_path: Path,
+    source_path: str,
+    soc_name: str,
+    doc_type: str,
+    chapter: int,
+    section: int,
+    subsection: str,
+    title: str,
+    content: str,
+    page_range: str,
+    feature_tags: str,
+    embedding: list[float],
+) -> int:
+    db = _open(db_path)
+    cur = db.execute(
+        """
+        INSERT INTO doc_sections
+          (source_path, soc_name, doc_type, chapter, section, subsection,
+           title, content, page_range, feature_tags)
+        VALUES (?,?,?,?,?,?,?,?,?,?)
+        """,
+        (source_path, soc_name, doc_type, chapter, section, subsection,
+         title, content, page_range, feature_tags),
+    )
+    section_id = cur.lastrowid
+    db.execute(
+        "INSERT INTO vec_docs (section_id, embedding) VALUES (?, ?)",
+        (section_id, to_blob(embedding)),
+    )
+    db.commit()
+    db.close()
+    return section_id
+
+
+def search_docs(db_path: Path, query_embedding: list[float], top_k: int = 5) -> list[dict[str, Any]]:
+    db = _open(db_path)
+    rows = db.execute(
+        """
+        SELECT
+            d.chapter, d.section, d.subsection, d.title,
+            d.content, d.page_range, d.feature_tags, d.doc_type,
+            v.distance
+        FROM vec_docs v
+        JOIN doc_sections d ON d.id = v.section_id
+        WHERE v.embedding MATCH ?
+          AND k = ?
+        ORDER BY v.distance
+        """,
+        (to_blob(query_embedding), top_k),
+    ).fetchall()
+    db.close()
+
+    results = []
+    for row in rows:
+        similarity = max(0.0, 1.0 - row["distance"])
+        tags = row["feature_tags"] or ""
+        results.append({
+            "chapter": row["chapter"],
+            "section": row["section"],
+            "title": row["title"],
+            "content": row["content"][:400],
+            "page_range": row["page_range"],
+            "feature_tags": tags.split(",") if tags else [],
+            "doc_type": row["doc_type"],
+            "similarity_score": round(similarity, 4),
+        })
+    return results
+
+
 def search_code(db_path: Path, query_embedding: list[float], top_k: int = 5) -> list[dict[str, Any]]:
     db = _open(db_path)
     rows = db.execute(

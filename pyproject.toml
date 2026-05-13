@@ -13,6 +13,9 @@ dependencies = [
     "sqlite-vec>=0.1.6",
     "tree-sitter>=0.22,<0.26",
     "tree-sitter-c>=0.21",
+    "pymupdf>=1.24",
+    "html2text>=2024.2",
+    "beautifulsoup4>=4.12",
 ]
 
 [project.scripts]

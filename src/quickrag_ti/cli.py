@@ -7,7 +7,7 @@ from pathlib import Path
 import click
 
 from . import __version__
-from .config import active_version_dir, code_db_path, load_global, save_global, CACHE_DIR
+from .config import active_version_dir, code_db_path, docs_db_path, load_global, save_global, CACHE_DIR
 
 
 @click.group()
@@ -62,61 +62,119 @@ def mcp(subcommand: str, version: str | None):
 @cli.command()
 @click.option("--soc", required=True, help="SoC name, e.g. AM62x")
 @click.option("--sdk", "sdk_path", type=click.Path(exists=True, path_type=Path), help="Path to SDK / C source root")
+@click.option("--docs", "docs_path", type=click.Path(exists=True, path_type=Path), help="Path to docs root (PDF/HTML)")
 @click.option("--output", required=True, help="Version label, e.g. v1.0-am62x")
-def prepare(soc: str, sdk_path: Path | None, output: str):
-    """Parse, embed, and store SDK sources into a versioned database."""
-    from .chunker import chunk_c_file
-    from .database import delete_chunks_for_file, init_code_db, insert_code_chunk
-    from .embedder import embed
-
+def prepare(soc: str, sdk_path: Path | None, docs_path: Path | None, output: str):
+    """Parse, embed, and store SDK sources and/or docs into a versioned database."""
     out_dir = CACHE_DIR / output
     out_dir.mkdir(parents=True, exist_ok=True)
-    db_path = out_dir / "code.db"
-    init_code_db(db_path)
 
-    if sdk_path is None:
-        click.echo("No --sdk path provided; nothing to index.", err=True)
+    if sdk_path is None and docs_path is None:
+        click.echo("Provide at least one of --sdk or --docs.", err=True)
         sys.exit(1)
 
-    c_files = sorted(sdk_path.rglob("*.c")) + sorted(sdk_path.rglob("*.h"))
-    if not c_files:
-        click.echo(f"No .c/.h files found under {sdk_path}", err=True)
-        sys.exit(1)
+    # ── Code indexing ──────────────────────────────────────────────────────
+    if sdk_path is not None:
+        from .chunker import chunk_c_file
+        from .database import delete_chunks_for_file, init_code_db, insert_code_chunk
+        from .embedder import embed
 
-    click.echo(f"Found {len(c_files)} source file(s). Parsing...")
+        db_path = out_dir / "code.db"
+        init_code_db(db_path)
 
-    all_chunks = []
-    with click.progressbar(c_files, label="Chunking files", width=60) as bar:
-        for cf in bar:
-            delete_chunks_for_file(db_path, str(cf))
-            all_chunks.extend(chunk_c_file(cf))
+        c_files = sorted(sdk_path.rglob("*.c")) + sorted(sdk_path.rglob("*.h"))
+        if not c_files:
+            click.echo(f"No .c/.h files found under {sdk_path}", err=True)
+            sys.exit(1)
 
-    if not all_chunks:
-        click.echo("No symbols extracted.", err=True)
-        sys.exit(1)
+        click.echo(f"[SDK] Found {len(c_files)} source file(s).")
+        all_chunks = []
+        with click.progressbar(c_files, label="  Chunking", width=60) as bar:
+            for cf in bar:
+                delete_chunks_for_file(db_path, str(cf))
+                all_chunks.extend(chunk_c_file(cf))
 
-    click.echo(f"Extracted {len(all_chunks)} chunk(s). Embedding...")
-    texts = [c.code_text for c in all_chunks]
+        if not all_chunks:
+            click.echo("No symbols extracted.", err=True)
+            sys.exit(1)
 
-    batch_size = 256
-    total_stored = 0
-    with click.progressbar(range(0, len(all_chunks), batch_size), label="Embedding + storing", width=60) as bar:
-        for start in bar:
-            batch_chunks = all_chunks[start : start + batch_size]
-            batch_texts = texts[start : start + batch_size]
-            embeddings = embed(batch_texts)
-            for chunk, emb in zip(batch_chunks, embeddings):
-                insert_code_chunk(
-                    db_path,
-                    symbol_name=chunk.symbol_name,
-                    file_path=chunk.file_path,
-                    line_start=chunk.line_start,
-                    line_end=chunk.line_end,
-                    code_text=chunk.code_text,
-                    chunk_type=chunk.chunk_type,
-                    embedding=emb,
-                )
-            total_stored += len(batch_chunks)
+        click.echo(f"  Extracted {len(all_chunks)} chunk(s). Embedding...")
+        batch_size = 256
+        code_stored = 0
+        with click.progressbar(range(0, len(all_chunks), batch_size), label="  Embedding", width=60) as bar:
+            for start in bar:
+                batch = all_chunks[start : start + batch_size]
+                embeddings = embed([c.code_text for c in batch])
+                for chunk, emb in zip(batch, embeddings):
+                    insert_code_chunk(
+                        db_path,
+                        symbol_name=chunk.symbol_name,
+                        file_path=chunk.file_path,
+                        line_start=chunk.line_start,
+                        line_end=chunk.line_end,
+                        code_text=chunk.code_text,
+                        chunk_type=chunk.chunk_type,
+                        embedding=emb,
+                    )
+                code_stored += len(batch)
+        click.echo(f"  {code_stored} code chunks → {db_path}")
+
+    # ── Docs indexing ──────────────────────────────────────────────────────
+    if docs_path is not None:
+        from .doc_parser import parse_pdf, parse_html
+        from .database import delete_sections_for_source, init_docs_db, insert_doc_section
+        from .embedder import embed
+
+        ddb_path = out_dir / "docs.db"
+        init_docs_db(ddb_path)
+
+        doc_files = (
+            sorted(docs_path.rglob("*.pdf"))
+            + sorted(docs_path.rglob("*.html"))
+            + sorted(docs_path.rglob("*.htm"))
+        )
+        if not doc_files:
+            click.echo(f"No .pdf/.html files found under {docs_path}", err=True)
+            sys.exit(1)
+
+        click.echo(f"[Docs] Found {len(doc_files)} document(s).")
+        all_sections = []
+        with click.progressbar(doc_files, label="  Parsing", width=60) as bar:
+            for df in bar:
+                delete_sections_for_source(ddb_path, str(df))
+                if df.suffix.lower() == ".pdf":
+                    all_sections.extend(parse_pdf(df, doc_type="TRM"))
+                else:
+                    all_sections.extend(parse_html(df, doc_type="HTML"))
+
+        if not all_sections:
+            click.echo("No doc sections extracted.", err=True)
+            sys.exit(1)
+
+        click.echo(f"  Extracted {len(all_sections)} section(s). Embedding...")
+        batch_size = 256
+        docs_stored = 0
+        with click.progressbar(range(0, len(all_sections), batch_size), label="  Embedding", width=60) as bar:
+            for start in bar:
+                batch = all_sections[start : start + batch_size]
+                embeddings = embed([s.content for s in batch])
+                for sec, emb in zip(batch, embeddings):
+                    insert_doc_section(
+                        ddb_path,
+                        source_path=sec.source_path,
+                        soc_name=soc,
+                        doc_type=sec.doc_type,
+                        chapter=sec.chapter,
+                        section=sec.section,
+                        subsection=sec.subsection,
+                        title=sec.title,
+                        content=sec.content,
+                        page_range=sec.page_range,
+                        feature_tags=sec.feature_tags,
+                        embedding=emb,
+                    )
+                docs_stored += len(batch)
+        click.echo(f"  {docs_stored} doc sections → {ddb_path}")
 
     version_cfg = {"soc": soc, "embedding_model": "all-MiniLM-L6-v2"}
     with open(out_dir / "config.json", "w") as f:
@@ -125,8 +183,6 @@ def prepare(soc: str, sdk_path: Path | None, output: str):
     cfg = load_global()
     cfg["active_version"] = output
     save_global(cfg)
-
-    click.echo(f"Done. {total_stored} chunks stored in {db_path}")
     click.echo(f"Active version set to '{output}'.")
 
 
@@ -162,6 +218,43 @@ def search_code(query: str, top_k: int):
             f"\n[{i}] {r['symbol_name']}  ({r['type']})  score={r['similarity_score']}\n"
             f"    {r['file_path']}:{r['line_start']}-{r['line_end']}\n"
             f"    {r['code_snippet'][:120].replace(chr(10), ' ')}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# search-trm
+# ---------------------------------------------------------------------------
+
+@cli.command("search-trm")
+@click.argument("query")
+@click.option("--top-k", default=5, show_default=True, help="Number of results to return")
+def search_trm(query: str, top_k: int):
+    """Semantic search over indexed TRM / doc sections."""
+    from .database import search_docs as db_search
+    from .embedder import embed_one
+
+    db = docs_db_path()
+    if db is None:
+        click.echo("No active version set. Run `quickrag-ti mcp active <version>`.", err=True)
+        sys.exit(1)
+    if not db.exists():
+        click.echo(f"docs.db not found at {db}. Run `quickrag-ti prepare --docs` first.", err=True)
+        sys.exit(1)
+
+    q_emb = embed_one(query)
+    results = db_search(db, q_emb, top_k=top_k)
+
+    if not results:
+        click.echo("No results found.")
+        return
+
+    for i, r in enumerate(results, 1):
+        tags = ", ".join(r["feature_tags"]) if r["feature_tags"] else ""
+        page = f"  p.{r['page_range']}" if r["page_range"] else ""
+        click.echo(
+            f"\n[{i}] {r['title']}  score={r['similarity_score']}{page}\n"
+            f"    Tags: {tags}\n"
+            f"    {r['content'][:160].replace(chr(10), ' ')}"
         )
 
 

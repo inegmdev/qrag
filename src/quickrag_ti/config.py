@@ -39,3 +39,10 @@ def code_db_path() -> Path | None:
     if d is None:
         return None
     return d / "code.db"
+
+
+def docs_db_path() -> Path | None:
+    d = active_version_dir()
+    if d is None:
+        return None
+    return d / "docs.db"

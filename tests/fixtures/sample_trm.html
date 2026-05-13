@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html><head><title>AM62x TRM Excerpt</title></head>
+<body>
+<nav id="toc"><ul><li><a href="#ch1">Memory</a></li><li><a href="#ch2">DMA</a></li></ul></nav>
+
+<h1 id="ch1">1  Memory Subsystem</h1>
+<p>The AM62x memory subsystem integrates SRAM, ECC, and cache controllers
+for high-reliability data storage. All memory regions support ECC protection.</p>
+
+<h2 id="s1_1">1.1  ECC Configuration</h2>
+<p>Error Correction Code (ECC) provides SECDED protection for all SRAM regions.
+ECC is enabled via the ECC_CTRL register at base address 0x40000000.</p>
+<p>To enable ECC: set bit 0 (ECC_EN) of ECC_CTRL. On detection of a correctable
+error the ECC_STATUS register bit 0 is set and an interrupt is raised if
+ECC_IRQ_EN is configured. The faulting address is latched in ECC_ERR_ADDR.</p>
+<h3 id="s1_1_1">1.1.1  ECC Register Map</h3>
+<p>ECC_CTRL (0x40000000): ECC enable control register. Bit 0 = ECC_EN.
+ECC_STATUS (0x40000004): Error status. Bit 0 = correctable error.
+ECC_ERR_ADDR (0x40000008): Address of faulting memory access.
+ECC_IRQ_EN (0x4000000C): Interrupt enable register.</p>
+
+<h2 id="s1_2">1.2  SRAM Controller</h2>
+<p>The SRAM controller manages access arbitration between CPU, DMA, and
+peripheral masters. Four banks of 256 KB are available with independent
+power gating. The sram_init() function implements the initialization sequence.</p>
+
+<h1 id="ch2">2  DMA Controller</h1>
+<p>The DMA controller provides eight independent channels for memory-to-memory,
+memory-to-peripheral, and peripheral-to-memory transfers.</p>
+
+<h2 id="s2_1">2.1  DMA Channel Configuration</h2>
+<p>Each channel is configured via a descriptor: source address, destination
+address, transfer count, and control word. Start a transfer by writing the
+descriptor to DMA_DESC[ch] and setting DMA_CTRL[ch].EN.</p>
+
+<h2 id="s2_2">2.2  DMA Transfer Modes</h2>
+<p>Single-shot, circular, and chain (scatter-gather) modes are supported.
+All modes support 32-bit, 16-bit, and 8-bit element widths. Misaligned
+transfers raise a bus error in DMA_ERR_STATUS.</p>
+
+<footer>AM62x Technical Reference Manual Rev 4.2</footer>
+</body></html>
