@@ -56,7 +56,7 @@ def mcp(subcommand: str, version: str | None):
 
 
 # ---------------------------------------------------------------------------
-# prepare (slice 001: regex C parsing, no tree-sitter)
+# prepare
 # ---------------------------------------------------------------------------
 
 @cli.command()
@@ -66,7 +66,7 @@ def mcp(subcommand: str, version: str | None):
 def prepare(soc: str, sdk_path: Path | None, output: str):
     """Parse, embed, and store SDK sources into a versioned database."""
     from .chunker import chunk_c_file
-    from .database import init_code_db, insert_code_chunk
+    from .database import delete_chunks_for_file, init_code_db, insert_code_chunk
     from .embedder import embed
 
     out_dir = CACHE_DIR / output
@@ -78,35 +78,45 @@ def prepare(soc: str, sdk_path: Path | None, output: str):
         click.echo("No --sdk path provided; nothing to index.", err=True)
         sys.exit(1)
 
-    c_files = list(sdk_path.rglob("*.c")) + list(sdk_path.rglob("*.h"))
+    c_files = sorted(sdk_path.rglob("*.c")) + sorted(sdk_path.rglob("*.h"))
     if not c_files:
         click.echo(f"No .c/.h files found under {sdk_path}", err=True)
         sys.exit(1)
 
-    click.echo(f"Found {len(c_files)} source file(s). Chunking...")
+    click.echo(f"Found {len(c_files)} source file(s). Parsing...")
+
     all_chunks = []
-    for cf in c_files:
-        all_chunks.extend(chunk_c_file(cf))
+    with click.progressbar(c_files, label="Chunking files", width=60) as bar:
+        for cf in bar:
+            delete_chunks_for_file(db_path, str(cf))
+            all_chunks.extend(chunk_c_file(cf))
 
     if not all_chunks:
-        click.echo("No functions extracted.", err=True)
+        click.echo("No symbols extracted.", err=True)
         sys.exit(1)
 
-    click.echo(f"Extracted {len(all_chunks)} chunk(s). Embedding (this may take a moment)...")
+    click.echo(f"Extracted {len(all_chunks)} chunk(s). Embedding...")
     texts = [c.code_text for c in all_chunks]
-    embeddings = embed(texts)
 
-    for chunk, emb in zip(all_chunks, embeddings):
-        insert_code_chunk(
-            db_path,
-            symbol_name=chunk.symbol_name,
-            file_path=chunk.file_path,
-            line_start=chunk.line_start,
-            line_end=chunk.line_end,
-            code_text=chunk.code_text,
-            chunk_type=chunk.chunk_type,
-            embedding=emb,
-        )
+    batch_size = 256
+    total_stored = 0
+    with click.progressbar(range(0, len(all_chunks), batch_size), label="Embedding + storing", width=60) as bar:
+        for start in bar:
+            batch_chunks = all_chunks[start : start + batch_size]
+            batch_texts = texts[start : start + batch_size]
+            embeddings = embed(batch_texts)
+            for chunk, emb in zip(batch_chunks, embeddings):
+                insert_code_chunk(
+                    db_path,
+                    symbol_name=chunk.symbol_name,
+                    file_path=chunk.file_path,
+                    line_start=chunk.line_start,
+                    line_end=chunk.line_end,
+                    code_text=chunk.code_text,
+                    chunk_type=chunk.chunk_type,
+                    embedding=emb,
+                )
+            total_stored += len(batch_chunks)
 
     version_cfg = {"soc": soc, "embedding_model": "all-MiniLM-L6-v2"}
     with open(out_dir / "config.json", "w") as f:
@@ -116,7 +126,7 @@ def prepare(soc: str, sdk_path: Path | None, output: str):
     cfg["active_version"] = output
     save_global(cfg)
 
-    click.echo(f"Done. {len(all_chunks)} chunks stored in {db_path}")
+    click.echo(f"Done. {total_stored} chunks stored in {db_path}")
     click.echo(f"Active version set to '{output}'.")
 
 
@@ -153,3 +163,33 @@ def search_code(query: str, top_k: int):
             f"    {r['file_path']}:{r['line_start']}-{r['line_end']}\n"
             f"    {r['code_snippet'][:120].replace(chr(10), ' ')}"
         )
+
+
+# ---------------------------------------------------------------------------
+# get-symbol
+# ---------------------------------------------------------------------------
+
+@cli.command("get-symbol")
+@click.argument("name")
+def get_symbol(name: str):
+    """Print the full source of a symbol by exact name."""
+    from .database import get_symbol as db_get_symbol
+
+    db = code_db_path()
+    if db is None:
+        click.echo("No active version set. Run `quickrag-ti mcp active <version>`.", err=True)
+        sys.exit(1)
+    if not db.exists():
+        click.echo(f"code.db not found at {db}. Run `quickrag-ti prepare` first.", err=True)
+        sys.exit(1)
+
+    result = db_get_symbol(db, name)
+    if result is None:
+        click.echo(f"Symbol '{name}' not found.")
+        sys.exit(1)
+
+    click.echo(
+        f"Symbol : {result['symbol_name']}  ({result['type']})\n"
+        f"File   : {result['file_path']}:{result['line_start']}-{result['line_end']}\n"
+        f"\n{result['code_text']}"
+    )

@@ -48,6 +48,22 @@ def init_code_db(db_path: Path) -> None:
     db.close()
 
 
+def delete_chunks_for_file(db_path: Path, file_path: str) -> None:
+    """Remove all chunks and vectors belonging to a file (for upsert on re-run)."""
+    db = _open(db_path)
+    rows = db.execute(
+        "SELECT id FROM code_chunks WHERE file_path = ?", (file_path,)
+    ).fetchall()
+    ids = [r["id"] for r in rows]
+    if ids:
+        placeholders = ",".join("?" * len(ids))
+        db.execute(f"DELETE FROM vec_code WHERE chunk_id IN ({placeholders})", ids)
+        db.execute(f"DELETE FROM symbols WHERE chunk_id IN ({placeholders})", ids)
+        db.execute(f"DELETE FROM code_chunks WHERE id IN ({placeholders})", ids)
+    db.commit()
+    db.close()
+
+
 def insert_code_chunk(
     db_path: Path,
     symbol_name: str,
@@ -81,6 +97,23 @@ def insert_code_chunk(
     db.commit()
     db.close()
     return chunk_id
+
+
+def get_symbol(db_path: Path, name: str) -> dict | None:
+    db = _open(db_path)
+    row = db.execute(
+        """
+        SELECT c.symbol_name, c.type, c.file_path, c.line_start, c.line_end, c.code_text
+        FROM symbols s
+        JOIN code_chunks c ON c.id = s.chunk_id
+        WHERE s.name = ?
+        """,
+        (name,),
+    ).fetchone()
+    db.close()
+    if row is None:
+        return None
+    return dict(row)
 
 
 def search_code(db_path: Path, query_embedding: list[float], top_k: int = 5) -> list[dict[str, Any]]:

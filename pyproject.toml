@@ -11,6 +11,8 @@ dependencies = [
     "click>=8.1",
     "sentence-transformers>=3.0",
     "sqlite-vec>=0.1.6",
+    "tree-sitter>=0.22,<0.26",
+    "tree-sitter-c>=0.21",
 ]
 
 [project.scripts]
