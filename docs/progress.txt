@@ -9,3 +9,25 @@ tests/fixtures/sample.c). Verified E2E:
 All acceptance criteria in issues/001-scaffold-search-code-e2e.md are met.
 
 Next: Issue 002 — `prepare --sdk` with tree-sitter C parsing (blocked on 001, now unblocked).
+
+2026-05-13 — Issue 002 complete: tree-sitter C parsing + all acceptance criteria met.
+
+Changes:
+  - chunker.py rewritten with tree-sitter; extracts function_definition,
+    struct_specifier, type_definition (typedef struct), preproc_def/preproc_function_def
+  - Functions >512 tokens split into overlapping sub-chunks (>=64 token overlap,
+    sub-chunks named func#0, func#1, ...)
+  - database.py: added delete_chunks_for_file() (upsert: re-run never duplicates)
+    and get_symbol() for exact symbol lookup
+  - cli.py: prepare now shows progress bars (chunking + batch embedding);
+    new `quickrag-ti get-symbol <name>` command added
+  - pyproject.toml: tree-sitter>=0.22,<0.26 and tree-sitter-c>=0.21 added
+
+Verified on toy fixture:
+  - 14 chunks extracted (vs 8 with regex): 8 functions + 2 structs + 4 macros
+  - `quickrag-ti search-code "initialize SRAM memory"` → sram_init top result (0.57)
+  - `quickrag-ti get-symbol sram_init` → prints full function body
+  - Re-run of prepare keeps chunk count at 14 (upsert working)
+  - Large-function split test: 200-line/600-token fn → 2 sub-chunks with 64-token overlap
+
+Next: Issue 003 — `prepare --docs` with PDF/HTML parsing (unblocked, parallel with 002).
