@@ -54,3 +54,30 @@ Verified E2E:
   - Re-run keeps count at 13 (upsert working)
 
 Next: Issue 004 — database distribution via GitHub Releases (blocked on 002+003, now unblocked).
+
+2026-05-14 — Issue 004 complete: GitHub Releases distribution + all acceptance criteria met.
+
+Changes:
+  - github_distribution.py (new): push_to_github(), list_databases(), download_database(),
+    delete_database() functions; uses gh CLI for auth/API; supports GITHUB_TOKEN env var
+  - cli.py: added push, list-databases, download, delete commands; push refuses to overwrite
+    without --force; download sets active version after successful fetch
+  - config.py: repo_url() checks QUICKRAG_GITHUB_URL env var first, falls back to config.json;
+    set_repo_url() and manifest_path() helper functions added
+
+Features:
+  - Manifest.json created with version, soc, embedding_model, and SHA-256 hashes of all assets
+  - Download includes progress bar and automatic SHA-256 checksum verification
+  - Delete prompts for confirmation before removing local version directory
+  - JForge support stubbed with NotImplementedError (awaiting credentials)
+  - GitHub auth via GITHUB_TOKEN env var or gh CLI credential (gh auth login)
+  - Clear error messages when auth missing or repo URL not configured
+
+Verified:
+  - CLI shows all 4 new commands (push, list-databases, download, delete)
+  - Manifest creation works correctly with SHA-256 computation
+  - Checksum verification logic tested and working
+  - Error handling for missing repo URL and auth credentials
+  - All acceptance criteria from issues/004-database-distribution-github.md met
+
+Next: Issue 005 — MCP server + `mcp install` (blocked on 002+003, now unblocked).
