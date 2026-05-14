@@ -116,6 +116,36 @@ def get_symbol(db_path: Path, name: str) -> dict | None:
     return dict(row)
 
 
+def list_symbols(db_path: Path, pattern: str = "") -> list[dict[str, Any]]:
+    db = _open(db_path)
+    if pattern:
+        query = """
+            SELECT name, type, file_path, line_number
+            FROM symbols
+            WHERE LOWER(name) LIKE LOWER(?)
+            ORDER BY name
+        """
+        rows = db.execute(query, (f"%{pattern}%",)).fetchall()
+    else:
+        query = """
+            SELECT name, type, file_path, line_number
+            FROM symbols
+            ORDER BY name
+        """
+        rows = db.execute(query).fetchall()
+    db.close()
+
+    results = []
+    for row in rows:
+        results.append({
+            "name": row["name"],
+            "type": row["type"],
+            "file": row["file_path"],
+            "line": row["line_number"],
+        })
+    return results
+
+
 def init_docs_db(db_path: Path) -> None:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     db = _open(db_path)

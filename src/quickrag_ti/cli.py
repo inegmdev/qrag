@@ -30,9 +30,10 @@ def cli():
 # ---------------------------------------------------------------------------
 
 @cli.command("mcp")
-@click.argument("subcommand", type=click.Choice(["active", "status", "info"]))
+@click.argument("subcommand", type=click.Choice(["active", "status", "info", "install"]))
 @click.argument("version", required=False)
-def mcp(subcommand: str, version: str | None):
+@click.option("--ai", type=click.Choice(["gemini", "claude"]), help="AI tool to install for (required for install)")
+def mcp(subcommand: str, version: str | None, ai: str | None):
     """Manage the active MCP version."""
     cfg = load_global()
     if subcommand == "active":
@@ -51,6 +52,9 @@ def mcp(subcommand: str, version: str | None):
         db = code_db_path()
         click.echo(f"code.db path   : {db or '(not set)'}")
         click.echo(f"code.db exists : {db.exists() if db else False}")
+        docs_db = docs_db_path()
+        click.echo(f"docs.db path   : {docs_db or '(not set)'}")
+        click.echo(f"docs.db exists : {docs_db.exists() if docs_db else False}")
     elif subcommand == "info":
         av = cfg.get("active_version")
         if not av:
@@ -62,6 +66,70 @@ def mcp(subcommand: str, version: str | None):
                 click.echo(json.dumps(json.load(f), indent=2))
         else:
             click.echo(f"No config.json found for version '{av}'.")
+    elif subcommand == "install":
+        if not ai:
+            click.echo("Error: --ai=gemini|claude is required for install", err=True)
+            sys.exit(1)
+        _mcp_install(ai)
+
+
+def _mcp_install(ai: str):
+    """Install MCP server config for Gemini or Claude."""
+    if ai == "gemini":
+        config_dir = Path.home() / ".config" / "gcloud"
+        config_file = config_dir / "gcloud-mcp-servers-config.json"
+
+        config_dir.mkdir(parents=True, exist_ok=True)
+
+        config = {}
+        if config_file.exists():
+            with open(config_file) as f:
+                try:
+                    config = json.load(f)
+                except json.JSONDecodeError:
+                    config = {}
+
+        if "servers" not in config:
+            config["servers"] = {}
+
+        config["servers"]["quickrag-ti"] = {
+            "command": "python",
+            "args": ["-m", "quickrag_ti.mcp_server"],
+        }
+
+        with open(config_file, "w") as f:
+            json.dump(config, f, indent=2)
+
+        click.echo(f"✓ Gemini MCP config installed to {config_file}")
+        click.echo(f"  Restart Gemini CLI or re-run `gemini` for changes to take effect.")
+
+    elif ai == "claude":
+        config_dir = Path.home() / ".claude"
+        config_file = config_dir / "claude.json"
+
+        config_dir.mkdir(parents=True, exist_ok=True)
+
+        config = {}
+        if config_file.exists():
+            with open(config_file) as f:
+                try:
+                    config = json.load(f)
+                except json.JSONDecodeError:
+                    config = {}
+
+        if "mcpServers" not in config:
+            config["mcpServers"] = {}
+
+        config["mcpServers"]["quickrag-ti"] = {
+            "command": "python",
+            "args": ["-m", "quickrag_ti.mcp_server"],
+        }
+
+        with open(config_file, "w") as f:
+            json.dump(config, f, indent=2)
+
+        click.echo(f"✓ Claude MCP config installed to {config_file}")
+        click.echo(f"  Restart Claude or re-run `claude` for changes to take effect.")
 
 
 # ---------------------------------------------------------------------------
