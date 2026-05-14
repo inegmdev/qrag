@@ -7,7 +7,16 @@ from pathlib import Path
 import click
 
 from . import __version__
-from .config import active_version_dir, code_db_path, docs_db_path, load_global, save_global, CACHE_DIR
+from .config import (
+    active_version_dir,
+    code_db_path,
+    docs_db_path,
+    load_global,
+    repo_url,
+    save_global,
+    set_repo_url,
+    CACHE_DIR,
+)
 
 
 @click.group()
@@ -286,3 +295,76 @@ def get_symbol(name: str):
         f"File   : {result['file_path']}:{result['line_start']}-{result['line_end']}\n"
         f"\n{result['code_text']}"
     )
+
+
+# ---------------------------------------------------------------------------
+# GitHub distribution
+# ---------------------------------------------------------------------------
+
+@cli.command()
+@click.argument("version")
+@click.option("--repo", type=click.Choice(["github", "jforge"]), default="github", help="Repository type")
+@click.option("--force", is_flag=True, help="Overwrite existing release")
+def push(version: str, repo: str, force: bool):
+    """Push version databases to a repository."""
+    if repo == "jforge":
+        click.echo("Error: JForge support not yet implemented. Please wait for access credentials.", err=True)
+        sys.exit(1)
+
+    url = repo_url()
+    if not url:
+        click.echo("Error: No repo URL configured. Set it with environment or config.", err=True)
+        sys.exit(1)
+
+    version_dir = CACHE_DIR / version
+    if not version_dir.exists():
+        click.echo(f"Version '{version}' not found in {CACHE_DIR}.", err=True)
+        sys.exit(1)
+
+    from .github_distribution import push_to_github
+    push_to_github(url, version, version_dir, force=force)
+
+
+@cli.command("list-databases")
+@click.option("--repo", type=click.Choice(["github", "jforge"]), default="github", help="Repository type")
+def list_databases(repo: str):
+    """List available databases on a repository."""
+    if repo == "jforge":
+        click.echo("Error: JForge support not yet implemented. Please wait for access credentials.", err=True)
+        sys.exit(1)
+
+    url = repo_url()
+    if not url:
+        click.echo("Error: No repo URL configured. Set it with environment or config.", err=True)
+        sys.exit(1)
+
+    from .github_distribution import list_databases as gh_list
+    gh_list(url)
+
+
+@cli.command()
+@click.argument("version")
+def download(version: str):
+    """Download a version database from a repository."""
+    url = repo_url()
+    if not url:
+        click.echo("Error: No repo URL configured. Set it with environment or config.", err=True)
+        sys.exit(1)
+
+    from .github_distribution import download_database
+    download_database(url, version, CACHE_DIR)
+
+    # Set as active version after successful download
+    cfg = load_global()
+    cfg["active_version"] = version
+    save_global(cfg)
+    click.echo(f"Active version set to '{version}'.")
+
+
+@cli.command()
+@click.argument("version")
+def delete(version: str):
+    """Delete a local version database."""
+    version_dir = CACHE_DIR / version
+    from .github_distribution import delete_database
+    delete_database(version_dir)

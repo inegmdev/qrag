@@ -46,3 +46,21 @@ def docs_db_path() -> Path | None:
     if d is None:
         return None
     return d / "docs.db"
+
+
+def repo_url() -> str | None:
+    env_url = os.getenv("QUICKRAG_GITHUB_URL")
+    if env_url:
+        return env_url
+    cfg = load_global()
+    return cfg.get("repo_url")
+
+
+def set_repo_url(url: str) -> None:
+    cfg = load_global()
+    cfg["repo_url"] = url
+    save_global(cfg)
+
+
+def manifest_path(version: str) -> Path:
+    return CACHE_DIR / version / "manifest.json"
