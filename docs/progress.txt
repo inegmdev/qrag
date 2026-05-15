@@ -143,3 +143,12 @@ Verification:
   - ✓ `claude mcp list` shows ✓ quickrag-ti - Connected (global)
   - ✓ MCP server accessible from any directory/project
   - ✓ README and help text updated with new usage information
+
+Additional Enhancement - Auto-detection of Available Agents:
+  - Enhanced `quickrag-ti mcp install --global` to auto-detect available CLI agents
+  - New _detect_available_agents() function checks for installed gemini and claude CLIs
+  - New _mcp_install_global_config() function handles installation for specific agents
+  - When --global is used without --ai, automatically installs for all detected agents
+  - Provides clear feedback on which agents were detected and configured
+  - Error handling for case where no CLI agents are found
+  - Updated README to clarify auto-detection behavior

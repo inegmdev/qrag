@@ -33,8 +33,8 @@ def cli():
 @click.argument("subcommand", type=click.Choice(["active", "status", "info", "install"]))
 @click.argument("version", required=False)
 @click.option("--ai", type=click.Choice(["gemini", "claude"]), help="AI tool to install for (required for install)")
-@click.option("--global", is_flag=True, help="Install MCP server system-wide for all projects (both gemini and claude)")
-def mcp(subcommand: str, version: str | None, ai: str | None, system_wide: bool):
+@click.option("--global", "global_install", is_flag=True, help="Install MCP server system-wide for all projects (both gemini and claude)")
+def mcp(subcommand: str, version: str | None, ai: str | None, global_install: bool):
     """Manage the active MCP version."""
     cfg = load_global()
     if subcommand == "active":
@@ -68,7 +68,7 @@ def mcp(subcommand: str, version: str | None, ai: str | None, system_wide: bool)
         else:
             click.echo(f"No config.json found for version '{av}'.")
     elif subcommand == "install":
-        if system_wide:
+        if global_install:
             _mcp_install_global()
         else:
             if not ai:
@@ -126,8 +126,78 @@ def _mcp_install(ai: str):
             sys.exit(1)
 
 
+def _detect_available_agents() -> list[str]:
+    """Detect which CLI agents (gemini, claude) are available."""
+    import shutil
+
+    available = []
+    if shutil.which("gemini"):
+        available.append("gemini")
+    if shutil.which("claude"):
+        available.append("claude")
+    return available
+
+
+def _mcp_install_global_config(mcp_cmd: str, agent: str) -> bool:
+    """Install MCP server to global config for a specific agent."""
+    if agent == "gemini":
+        config_file = Path.home() / ".gemini" / "settings.json"
+        config_file.parent.mkdir(parents=True, exist_ok=True)
+
+        config = {}
+        if config_file.exists():
+            with open(config_file) as f:
+                try:
+                    config = json.load(f)
+                except json.JSONDecodeError:
+                    config = {}
+
+        if "mcpServers" not in config:
+            config["mcpServers"] = {}
+
+        config["mcpServers"]["quickrag-ti"] = {
+            "command": mcp_cmd,
+            "args": [],
+        }
+
+        with open(config_file, "w") as f:
+            json.dump(config, f, indent=2)
+
+        click.echo(f"✓ Gemini MCP server 'quickrag-ti' installed")
+        click.echo(f"  Config: {config_file}")
+        return True
+
+    elif agent == "claude":
+        config_file = Path.home() / ".claude.json"
+
+        config = {}
+        if config_file.exists():
+            with open(config_file) as f:
+                try:
+                    config = json.load(f)
+                except json.JSONDecodeError:
+                    config = {}
+
+        if "mcpServers" not in config:
+            config["mcpServers"] = {}
+
+        config["mcpServers"]["quickrag-ti"] = {
+            "command": mcp_cmd,
+            "args": [],
+        }
+
+        with open(config_file, "w") as f:
+            json.dump(config, f, indent=2)
+
+        click.echo(f"✓ Claude MCP server 'quickrag-ti' installed")
+        click.echo(f"  Config: {config_file}")
+        return True
+
+    return False
+
+
 def _mcp_install_global():
-    """Install MCP server system-wide for both Gemini and Claude."""
+    """Install MCP server system-wide for all available agents."""
     import shutil
 
     mcp_cmd = shutil.which("quickrag-ti-mcp-server")
@@ -135,58 +205,28 @@ def _mcp_install_global():
         click.echo("Error: quickrag-ti-mcp-server not found in PATH", err=True)
         sys.exit(1)
 
-    # Install for Gemini (global config)
-    gemini_config_file = Path.home() / ".gemini" / "settings.json"
-    gemini_config_file.parent.mkdir(parents=True, exist_ok=True)
+    # Detect available agents
+    available_agents = _detect_available_agents()
+    if not available_agents:
+        click.echo("Error: No CLI agents found (gemini or claude)", err=True)
+        click.echo("Please install Gemini CLI or Claude Code first.", err=True)
+        sys.exit(1)
 
-    gemini_config = {}
-    if gemini_config_file.exists():
-        with open(gemini_config_file) as f:
-            try:
-                gemini_config = json.load(f)
-            except json.JSONDecodeError:
-                gemini_config = {}
-
-    if "mcpServers" not in gemini_config:
-        gemini_config["mcpServers"] = {}
-
-    gemini_config["mcpServers"]["quickrag-ti"] = {
-        "command": mcp_cmd,
-        "args": [],
-    }
-
-    with open(gemini_config_file, "w") as f:
-        json.dump(gemini_config, f, indent=2)
-
-    click.echo(f"✓ Gemini MCP server 'quickrag-ti' installed system-wide")
-    click.echo(f"  Config: {gemini_config_file}")
-
-    # Install for Claude (global config)
-    claude_config_file = Path.home() / ".claude.json"
-
-    claude_config = {}
-    if claude_config_file.exists():
-        with open(claude_config_file) as f:
-            try:
-                claude_config = json.load(f)
-            except json.JSONDecodeError:
-                claude_config = {}
-
-    if "mcpServers" not in claude_config:
-        claude_config["mcpServers"] = {}
-
-    claude_config["mcpServers"]["quickrag-ti"] = {
-        "command": mcp_cmd,
-        "args": [],
-    }
-
-    with open(claude_config_file, "w") as f:
-        json.dump(claude_config, f, indent=2)
-
-    click.echo(f"✓ Claude MCP server 'quickrag-ti' installed system-wide")
-    click.echo(f"  Config: {claude_config_file}")
+    click.echo(f"Detected available agents: {', '.join(available_agents)}")
     click.echo()
-    click.echo("MCP server is now available system-wide for both Gemini and Claude!")
+
+    # Install for all available agents
+    installed = []
+    for agent in available_agents:
+        if _mcp_install_global_config(mcp_cmd, agent):
+            installed.append(agent)
+
+    click.echo()
+    if installed:
+        agents_str = " and ".join(installed)
+        click.echo(f"✓ MCP server is now available system-wide for {agents_str}!")
+    else:
+        click.echo("Warning: MCP server could not be installed to any agent.", err=True)
 
 
 # ---------------------------------------------------------------------------

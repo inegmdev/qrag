@@ -46,13 +46,13 @@ quickrag-ti mcp active v1.0-am62x
 
 #### 3. Install MCP Server for Your AI Tool
 
-**System-wide installation (recommended)** — Available in all projects:
+**System-wide installation (recommended)** — Auto-detects and installs for all available agents:
 
 ```bash
 quickrag-ti mcp install --global
 ```
 
-This registers the MCP server globally for both Gemini and Claude.
+This automatically detects which CLI agents (Gemini, Claude) are installed and registers the MCP server globally for all of them.
 
 **Project-local installation** — If you prefer per-project configuration:
 
