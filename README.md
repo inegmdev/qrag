@@ -49,7 +49,7 @@ quickrag-ti mcp active v1.0-am62x
 **System-wide installation (recommended)** — Available in all projects:
 
 ```bash
-quickrag-ti mcp install --system-wide
+quickrag-ti mcp install --global
 ```
 
 This registers the MCP server globally for both Gemini and Claude.
@@ -207,7 +207,7 @@ quickrag-ti/
 - `search-code` / `search-trm` — Debug search (for CLI testing)
 - `get-symbol` — Look up a symbol by exact name
 - `mcp active|status|info|install` — Manage active version and MCP registration
-  - `mcp install --system-wide` — Register MCP server system-wide for Gemini & Claude
+  - `mcp install --global` — Register MCP server system-wide for Gemini & Claude
   - `mcp install --ai=gemini|claude` — Register MCP server for a specific AI tool (project-local)
   - `mcp active <version>` — Set the active indexed database version
   - `mcp status` — Show active version and database status
@@ -245,7 +245,7 @@ PYTHONPATH=src quickrag-ti prepare \
 PYTHONPATH=src quickrag-ti search-code "error correction"
 
 # Test MCP install (system-wide)
-PYTHONPATH=src quickrag-ti mcp install --system-wide
+PYTHONPATH=src quickrag-ti mcp install --global
 
 # Test MCP install (project-local)
 PYTHONPATH=src quickrag-ti mcp install --ai=claude
@@ -328,10 +328,10 @@ A: Run `quickrag-ti mcp active <version>` to set one. Download with `quickrag-ti
 A: Run `quickrag-ti prepare` to create one, or download a pre-built version.
 
 **Q: MCP tools not showing in Claude/Gemini**
-A: Re-run `quickrag-ti mcp install --system-wide` (for global) or `quickrag-ti mcp install --ai=claude` (for project-local), then restart the AI tool. Verify with `gemini mcp list` or `claude mcp list`.
+A: Re-run `quickrag-ti mcp install --global` (for global) or `quickrag-ti mcp install --ai=claude` (for project-local), then restart the AI tool. Verify with `gemini mcp list` or `claude mcp list`.
 
 **Q: MCP server shows "Disconnected"**
-A: This usually means the MCP server executable can't be found or isn't running properly. Ensure `quickrag-ti-mcp-server` is installed (`pip install -e .` from the project root) and try reinstalling with `quickrag-ti mcp install --system-wide`.
+A: This usually means the MCP server executable can't be found or isn't running properly. Ensure `quickrag-ti-mcp-server` is installed (`pip install -e .` from the project root) and try reinstalling with `quickrag-ti mcp install --global`.
 
 **Q: Search returns no results**
 A: Check that code.db exists with `quickrag-ti mcp status`, and that your query is semantically related to the indexed symbols.

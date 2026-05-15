@@ -33,7 +33,7 @@ def cli():
 @click.argument("subcommand", type=click.Choice(["active", "status", "info", "install"]))
 @click.argument("version", required=False)
 @click.option("--ai", type=click.Choice(["gemini", "claude"]), help="AI tool to install for (required for install)")
-@click.option("--system-wide", is_flag=True, help="Install MCP server system-wide for all projects (both gemini and claude)")
+@click.option("--global", is_flag=True, help="Install MCP server system-wide for all projects (both gemini and claude)")
 def mcp(subcommand: str, version: str | None, ai: str | None, system_wide: bool):
     """Manage the active MCP version."""
     cfg = load_global()
@@ -69,10 +69,10 @@ def mcp(subcommand: str, version: str | None, ai: str | None, system_wide: bool)
             click.echo(f"No config.json found for version '{av}'.")
     elif subcommand == "install":
         if system_wide:
-            _mcp_install_system_wide()
+            _mcp_install_global()
         else:
             if not ai:
-                click.echo("Error: --ai=gemini|claude is required for install (or use --system-wide)", err=True)
+                click.echo("Error: --ai=gemini|claude is required for install (or use --global)", err=True)
                 sys.exit(1)
             _mcp_install(ai)
 
@@ -126,7 +126,7 @@ def _mcp_install(ai: str):
             sys.exit(1)
 
 
-def _mcp_install_system_wide():
+def _mcp_install_global():
     """Install MCP server system-wide for both Gemini and Claude."""
     import shutil
 
