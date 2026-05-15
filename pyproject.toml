@@ -20,6 +20,7 @@ dependencies = [
 
 [project.scripts]
 quickrag-ti = "quickrag_ti.cli:cli"
+quickrag-ti-mcp-server = "quickrag_ti.mcp_server:run"
 
 [tool.setuptools.packages.find]
 where = ["src"]

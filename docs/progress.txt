@@ -115,3 +115,31 @@ server structure and tool definitions are complete and correct for accepting cal
 Gemini/Claude CLI.
 
 All issues 001-005 complete. Next: Issue 006 — Polish: tests, logging, error handling, README.
+
+2026-05-15 — Issue 005 continued: MCP server fixes + system-wide installation feature added.
+
+Changes to issue 005 implementation:
+  - Fixed: Updated mcp install to use proper `gemini/claude mcp add` commands instead of
+    manually editing config files (which were being ignored by CLI v0.42.0+)
+  - Fixed: Created dedicated `quickrag-ti-mcp-server` entry point in pyproject.toml for more
+    reliable subprocess invocation (instead of `python3 -m quickrag_ti.mcp_server`)
+  - Fixed: Changed from relative command to full absolute path (/home/inegm/.local/bin/quickrag-ti-mcp-server)
+    to ensure MCP server is accessible regardless of PATH or working directory
+  - New Feature: Added `--system-wide` flag to `quickrag-ti mcp install` command:
+    * `quickrag-ti mcp install --system-wide` → registers MCP server globally in:
+      - ~/.gemini/settings.json (Gemini global config)
+      - ~/.claude.json (Claude global config)
+    * MCP server now available system-wide for all projects (not just the current project)
+    * New _mcp_install_system_wide() function handles direct config file manipulation
+  - Updated documentation (README.md):
+    * Added recommended system-wide installation workflow
+    * Updated CLI command docs to show both --system-wide and project-local --ai options
+    * Added troubleshooting for MCP server connection issues
+    * Updated MCP server entry point documentation
+
+Verification:
+  - ✓ `quickrag-ti mcp install --system-wide` successfully registers MCP server for both CLIs
+  - ✓ `gemini mcp list` shows ✓ quickrag-ti - Connected (global)
+  - ✓ `claude mcp list` shows ✓ quickrag-ti - Connected (global)
+  - ✓ MCP server accessible from any directory/project
+  - ✓ README and help text updated with new usage information

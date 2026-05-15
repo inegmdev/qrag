@@ -33,7 +33,8 @@ def cli():
 @click.argument("subcommand", type=click.Choice(["active", "status", "info", "install"]))
 @click.argument("version", required=False)
 @click.option("--ai", type=click.Choice(["gemini", "claude"]), help="AI tool to install for (required for install)")
-def mcp(subcommand: str, version: str | None, ai: str | None):
+@click.option("--system-wide", is_flag=True, help="Install MCP server system-wide for all projects (both gemini and claude)")
+def mcp(subcommand: str, version: str | None, ai: str | None, system_wide: bool):
     """Manage the active MCP version."""
     cfg = load_global()
     if subcommand == "active":
@@ -67,69 +68,125 @@ def mcp(subcommand: str, version: str | None, ai: str | None):
         else:
             click.echo(f"No config.json found for version '{av}'.")
     elif subcommand == "install":
-        if not ai:
-            click.echo("Error: --ai=gemini|claude is required for install", err=True)
-            sys.exit(1)
-        _mcp_install(ai)
+        if system_wide:
+            _mcp_install_system_wide()
+        else:
+            if not ai:
+                click.echo("Error: --ai=gemini|claude is required for install (or use --system-wide)", err=True)
+                sys.exit(1)
+            _mcp_install(ai)
 
 
 def _mcp_install(ai: str):
     """Install MCP server config for Gemini or Claude."""
+    import shutil
+    import subprocess
+
+    mcp_cmd = shutil.which("quickrag-ti-mcp-server")
+    if not mcp_cmd:
+        click.echo("Error: quickrag-ti-mcp-server not found in PATH", err=True)
+        sys.exit(1)
+
     if ai == "gemini":
-        config_dir = Path.home() / ".config" / "gcloud"
-        config_file = config_dir / "gcloud-mcp-servers-config.json"
-
-        config_dir.mkdir(parents=True, exist_ok=True)
-
-        config = {}
-        if config_file.exists():
-            with open(config_file) as f:
-                try:
-                    config = json.load(f)
-                except json.JSONDecodeError:
-                    config = {}
-
-        if "servers" not in config:
-            config["servers"] = {}
-
-        config["servers"]["quickrag-ti"] = {
-            "command": "python",
-            "args": ["-m", "quickrag_ti.mcp_server"],
-        }
-
-        with open(config_file, "w") as f:
-            json.dump(config, f, indent=2)
-
-        click.echo(f"✓ Gemini MCP config installed to {config_file}")
-        click.echo(f"  Restart Gemini CLI or re-run `gemini` for changes to take effect.")
+        try:
+            result = subprocess.run(
+                ["gemini", "mcp", "add", "quickrag-ti", mcp_cmd],
+                capture_output=True,
+                text=True,
+            )
+            if result.returncode == 0:
+                click.echo(f"✓ Gemini MCP server 'quickrag-ti' registered")
+                click.echo(f"  Run `gemini mcp list` to verify installation")
+            else:
+                click.echo(f"Error: Failed to register MCP server with Gemini", err=True)
+                click.echo(f"  {result.stderr}", err=True)
+                sys.exit(1)
+        except FileNotFoundError:
+            click.echo(f"Error: Gemini CLI not found in PATH", err=True)
+            click.echo(f"  Make sure Gemini CLI is installed and in your PATH", err=True)
+            sys.exit(1)
 
     elif ai == "claude":
-        config_dir = Path.home() / ".claude"
-        config_file = config_dir / "claude.json"
+        try:
+            result = subprocess.run(
+                ["claude", "mcp", "add", "quickrag-ti", mcp_cmd],
+                capture_output=True,
+                text=True,
+            )
+            if result.returncode == 0:
+                click.echo(f"✓ Claude MCP server 'quickrag-ti' registered")
+                click.echo(f"  Run `claude mcp list` to verify installation")
+            else:
+                click.echo(f"Error: Failed to register MCP server with Claude", err=True)
+                click.echo(f"  {result.stderr}", err=True)
+                sys.exit(1)
+        except FileNotFoundError:
+            click.echo(f"Error: Claude CLI not found in PATH", err=True)
+            click.echo(f"  Make sure Claude Code is installed and in your PATH", err=True)
+            sys.exit(1)
 
-        config_dir.mkdir(parents=True, exist_ok=True)
 
-        config = {}
-        if config_file.exists():
-            with open(config_file) as f:
-                try:
-                    config = json.load(f)
-                except json.JSONDecodeError:
-                    config = {}
+def _mcp_install_system_wide():
+    """Install MCP server system-wide for both Gemini and Claude."""
+    import shutil
 
-        if "mcpServers" not in config:
-            config["mcpServers"] = {}
+    mcp_cmd = shutil.which("quickrag-ti-mcp-server")
+    if not mcp_cmd:
+        click.echo("Error: quickrag-ti-mcp-server not found in PATH", err=True)
+        sys.exit(1)
 
-        config["mcpServers"]["quickrag-ti"] = {
-            "command": "python",
-            "args": ["-m", "quickrag_ti.mcp_server"],
-        }
+    # Install for Gemini (global config)
+    gemini_config_file = Path.home() / ".gemini" / "settings.json"
+    gemini_config_file.parent.mkdir(parents=True, exist_ok=True)
 
-        with open(config_file, "w") as f:
-            json.dump(config, f, indent=2)
+    gemini_config = {}
+    if gemini_config_file.exists():
+        with open(gemini_config_file) as f:
+            try:
+                gemini_config = json.load(f)
+            except json.JSONDecodeError:
+                gemini_config = {}
 
-        click.echo(f"✓ Claude MCP config installed to {config_file}")
-        click.echo(f"  Restart Claude or re-run `claude` for changes to take effect.")
+    if "mcpServers" not in gemini_config:
+        gemini_config["mcpServers"] = {}
+
+    gemini_config["mcpServers"]["quickrag-ti"] = {
+        "command": mcp_cmd,
+        "args": [],
+    }
+
+    with open(gemini_config_file, "w") as f:
+        json.dump(gemini_config, f, indent=2)
+
+    click.echo(f"✓ Gemini MCP server 'quickrag-ti' installed system-wide")
+    click.echo(f"  Config: {gemini_config_file}")
+
+    # Install for Claude (global config)
+    claude_config_file = Path.home() / ".claude.json"
+
+    claude_config = {}
+    if claude_config_file.exists():
+        with open(claude_config_file) as f:
+            try:
+                claude_config = json.load(f)
+            except json.JSONDecodeError:
+                claude_config = {}
+
+    if "mcpServers" not in claude_config:
+        claude_config["mcpServers"] = {}
+
+    claude_config["mcpServers"]["quickrag-ti"] = {
+        "command": mcp_cmd,
+        "args": [],
+    }
+
+    with open(claude_config_file, "w") as f:
+        json.dump(claude_config, f, indent=2)
+
+    click.echo(f"✓ Claude MCP server 'quickrag-ti' installed system-wide")
+    click.echo(f"  Config: {claude_config_file}")
+    click.echo()
+    click.echo("MCP server is now available system-wide for both Gemini and Claude!")
 
 
 # ---------------------------------------------------------------------------

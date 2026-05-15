@@ -11,11 +11,13 @@ Semantic + structural code & documentation indexing for TI SDKs and technical do
 ### Installation
 
 Install the package:
+
 ```bash
 pip install quickrag-ti
 ```
 
 Or install from source:
+
 ```bash
 git clone https://github.com/your-org/quickrag-ti.git
 cd quickrag-ti
@@ -27,6 +29,7 @@ pip install -e .
 #### 1. Download a Pre-Built Database
 
 Download an indexing database for your SoC (e.g., AM62x):
+
 ```bash
 # List available databases
 quickrag-ti list-databases
@@ -43,13 +46,21 @@ quickrag-ti mcp active v1.0-am62x
 
 #### 3. Install MCP Server for Your AI Tool
 
-**For Gemini CLI:**
+**System-wide installation (recommended)** — Available in all projects:
+
 ```bash
-quickrag-ti mcp install --ai=gemini
+quickrag-ti mcp install --system-wide
 ```
 
-**For Claude (Claude Code):**
+This registers the MCP server globally for both Gemini and Claude.
+
+**Project-local installation** — If you prefer per-project configuration:
+
 ```bash
+# For Gemini CLI only
+quickrag-ti mcp install --ai=gemini
+
+# For Claude (Claude Code) only
 quickrag-ti mcp install --ai=claude
 ```
 
@@ -63,6 +74,7 @@ Once installed, your Gemini or Claude CLI will have access to four MCP tools:
 - **`list_symbols(pattern="")`** — List all symbols, optionally filtered by pattern
 
 **Example:** Ask your agent:
+
 > "How is ECC enabled in SRAM on AM62x? Show me the code and TRM section."
 
 The agent will call the MCP tools, retrieve code + docs, and synthesize an answer using both.
@@ -89,7 +101,10 @@ quickrag-ti prepare \
   --output v1.1-am62x
 ```
 
+![quickrag-ti-prepare](docs/images/quickrag-ti-prepare.png)
+
 This will:
+
 1. Parse C/C++ source files using Tree-sitter
 2. Extract functions, structs, and macros
 3. Parse PDF/HTML documentation sections
@@ -98,6 +113,7 @@ This will:
 6. Automatically set as active version
 
 Push to GitHub for team distribution:
+
 ```bash
 quickrag-ti push v1.1-am62x
 ```
@@ -155,34 +171,47 @@ quickrag-ti/
 ### Key Modules
 
 **`embedder.py`** — Generates embeddings using `all-MiniLM-L6-v2` (384-dim, local, free)
+
 - `embed(texts)` — Batch embed a list of strings
 - `embed_one(text)` — Embed a single string
 
 **`chunker.py`** — Extracts code symbols using Tree-sitter
+
 - `chunk_c_file(path)` — Parse C/H file, return list of `CodeChunk` objects
 - Large functions (>512 tokens) auto-split into overlapping sub-chunks
 
 **`doc_parser.py`** — Parses PDFs (PyMuPDF) and HTML (BeautifulSoup)
+
 - `parse_pdf(path, doc_type)` — Extract sections with heading hierarchy
 - `parse_html(path, doc_type)` — Extract sections from HTML
 - Font-size heuristics for heading detection; auto-tags feature names
 
 **`database.py`** — SQLite + sqlite-vec for vector search
+
 - `init_code_db()` / `init_docs_db()` — Create schema with vector tables
 - `search_code()` / `search_docs()` — Semantic search by embedding distance
 - `get_symbol()` — Exact lookup by symbol name
 - `list_symbols()` — List all symbols with pattern filtering
 
 **`mcp_server.py`** — JSON-RPC 2.0 MCP server over stdio
+
 - Implements 4 MCP tools (search_code, search_trm, get_symbol_definition, list_symbols)
 - Reads from active version's databases
-- Entry point: `python -m quickrag_ti.mcp_server`
+- Entry points:
+  - `quickrag-ti-mcp-server` — Installed command (preferred)
+  - `python -m quickrag_ti.mcp_server` — Direct module invocation
 
 **`cli.py`** — Click command group
+
 - `prepare` — Index an SDK and/or docs
 - `search-code` / `search-trm` — Debug search (for CLI testing)
 - `get-symbol` — Look up a symbol by exact name
 - `mcp active|status|info|install` — Manage active version and MCP registration
+  - `mcp install --system-wide` — Register MCP server system-wide for Gemini & Claude
+  - `mcp install --ai=gemini|claude` — Register MCP server for a specific AI tool (project-local)
+  - `mcp active <version>` — Set the active indexed database version
+  - `mcp status` — Show active version and database status
+  - `mcp info` — Display active version metadata
 - `push|download|list-databases|delete` — GitHub distribution
 
 ### Development Workflow
@@ -215,7 +244,10 @@ PYTHONPATH=src quickrag-ti prepare \
 # Test search
 PYTHONPATH=src quickrag-ti search-code "error correction"
 
-# Test MCP install
+# Test MCP install (system-wide)
+PYTHONPATH=src quickrag-ti mcp install --system-wide
+
+# Test MCP install (project-local)
 PYTHONPATH=src quickrag-ti mcp install --ai=claude
 ```
 
@@ -235,6 +267,7 @@ echo '{"jsonrpc": "2.0", "id": 1, "method": "tools/list"}' | \
 #### Debugging
 
 Enable verbose output:
+
 ```bash
 export DEBUG=1
 PYTHONPATH=src quickrag-ti prepare --soc AM62x --sdk tests/fixtures --output v0.0-dev
@@ -256,12 +289,14 @@ Progress is logged in `docs/progress.txt` with timestamped updates after each is
 ### Building & Distributing
 
 Build a source distribution:
+
 ```bash
 pip install build
 python -m build
 ```
 
 Distribute via GitHub Releases:
+
 ```bash
 # Set your repo URL
 export QUICKRAG_GITHUB_URL=https://github.com/your-org/quickrag-ti-databases
@@ -274,6 +309,7 @@ PYTHONPATH=src quickrag-ti push v1.0-am62x
 ### Dependencies
 
 See `pyproject.toml` for the full list. Key ones:
+
 - **click** — CLI framework
 - **sentence-transformers** — Embeddings
 - **sqlite-vec** — Vector search in SQLite
@@ -285,16 +321,19 @@ See `pyproject.toml` for the full list. Key ones:
 
 ## Troubleshooting
 
-**Q: "No active version set"**  
+**Q: "No active version set"**
 A: Run `quickrag-ti mcp active <version>` to set one. Download with `quickrag-ti download` first if needed.
 
-**Q: "code.db not found"**  
+**Q: "code.db not found"**
 A: Run `quickrag-ti prepare` to create one, or download a pre-built version.
 
-**Q: MCP tools not showing in Claude/Gemini**  
-A: Re-run `quickrag-ti mcp install --ai=claude` (or gemini), then restart the AI tool.
+**Q: MCP tools not showing in Claude/Gemini**
+A: Re-run `quickrag-ti mcp install --system-wide` (for global) or `quickrag-ti mcp install --ai=claude` (for project-local), then restart the AI tool. Verify with `gemini mcp list` or `claude mcp list`.
 
-**Q: Search returns no results**  
+**Q: MCP server shows "Disconnected"**
+A: This usually means the MCP server executable can't be found or isn't running properly. Ensure `quickrag-ti-mcp-server` is installed (`pip install -e .` from the project root) and try reinstalling with `quickrag-ti mcp install --system-wide`.
+
+**Q: Search returns no results**
 A: Check that code.db exists with `quickrag-ti mcp status`, and that your query is semantically related to the indexed symbols.
 
 ---
@@ -302,6 +341,7 @@ A: Check that code.db exists with `quickrag-ti mcp status`, and that your query 
 ## Contributing
 
 Contributions welcome! Please:
+
 1. Fork the repo
 2. Create a feature branch (`git checkout -b feature/my-feature`)
 3. Add tests for new functionality
