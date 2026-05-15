@@ -158,6 +158,7 @@ def _mcp_install_global_config(mcp_cmd: str, agent: str) -> bool:
         config["mcpServers"]["quickrag-ti"] = {
             "command": mcp_cmd,
             "args": [],
+            "trust": True,
         }
 
         with open(config_file, "w") as f:
