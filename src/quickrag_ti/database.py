@@ -116,23 +116,25 @@ def get_symbol(db_path: Path, name: str) -> dict | None:
     return dict(row)
 
 
-def list_symbols(db_path: Path, pattern: str = "") -> list[dict[str, Any]]:
+def list_symbols(db_path: Path, pattern: str = "", limit: int = 200) -> list[dict[str, Any]]:
     db = _open(db_path)
     if pattern:
         query = """
             SELECT name, type, file_path, line_number
             FROM symbols
-            WHERE LOWER(name) LIKE LOWER(?)
+            WHERE name LIKE ?
             ORDER BY name
+            LIMIT ?
         """
-        rows = db.execute(query, (f"%{pattern}%",)).fetchall()
+        rows = db.execute(query, (f"%{pattern}%", limit)).fetchall()
     else:
         query = """
             SELECT name, type, file_path, line_number
             FROM symbols
             ORDER BY name
+            LIMIT ?
         """
-        rows = db.execute(query).fetchall()
+        rows = db.execute(query, (limit,)).fetchall()
     db.close()
 
     results = []

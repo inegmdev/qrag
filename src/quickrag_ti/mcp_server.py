@@ -73,13 +73,13 @@ def get_symbol_definition_impl(symbol: str) -> dict:
     }
 
 
-def list_symbols_impl(pattern: str = "") -> list[dict]:
-    """List all indexed symbols, optionally filtered by pattern."""
+def list_symbols_impl(pattern: str = "", limit: int = 200) -> list[dict]:
+    """List indexed symbols, optionally filtered by pattern."""
     code_db, _ = _ensure_active_version()
     if not code_db.exists():
         return []
 
-    results = db_list_symbols(code_db, pattern)
+    results = db_list_symbols(code_db, pattern, limit)
     return results
 
 
@@ -119,15 +119,20 @@ TOOLS = {
         "impl": get_symbol_definition_impl,
     },
     "list_symbols": {
-        "description": "List all indexed symbols, optionally filtered by pattern.",
+        "description": "List indexed symbols, optionally filtered by pattern.",
         "inputSchema": {
             "type": "object",
             "properties": {
                 "pattern": {
                     "type": "string",
-                    "description": "Optional substring to filter symbol names (case-insensitive)",
+                    "description": "Optional substring to filter symbol names",
                     "default": "",
-                }
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Maximum number of symbols to return (default: 200)",
+                    "default": 200,
+                },
             },
         },
         "impl": list_symbols_impl,
@@ -148,7 +153,7 @@ def handle_request(request: dict) -> dict:
             "id": req_id,
             "result": {
                 "protocolVersion": "2024-11-05",
-                "capabilities": {},
+                "capabilities": {"tools": {}},
                 "serverInfo": {
                     "name": "quickrag-ti",
                     "version": "0.1.0",
@@ -214,17 +219,14 @@ def run():
         try:
             request = json.loads(line.strip())
             response = handle_request(request)
-            print(json.dumps(response))
-            sys.stdout.flush()
+            # Only respond if this is not a notification (has an id)
+            if request.get("id") is not None:
+                print(json.dumps(response))
+                sys.stdout.flush()
         except json.JSONDecodeError:
             continue
         except Exception as e:
-            error_response = {
-                "jsonrpc": "2.0",
-                "error": {"code": -32603, "message": f"Server error: {str(e)}"},
-            }
-            print(json.dumps(error_response))
-            sys.stdout.flush()
+            continue
 
 
 if __name__ == "__main__":
