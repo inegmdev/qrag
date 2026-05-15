@@ -18,6 +18,36 @@ from .config import (
     CACHE_DIR,
 )
 
+WIKIRAG_SKILL_CONTENT = """Search the local RAG database iteratively to answer a question about code or documentation.
+
+## Workflow
+
+Given: $ARGUMENTS (your question or topic)
+
+1. **Think first**: Decompose the question — what concept am I looking for in docs? What symbol/function in code? Write your search intent before calling tools.
+
+2. **Search in parallel**: Call `search_docs` and `search_code` (both MCP tools) simultaneously with targeted queries. If only docs or only code apply, search only what is relevant.
+
+3. **Assess results**: For each result set, note the similarity scores and excerpt relevance. State explicitly what you found and what remains unanswered.
+
+4. **Iterate if needed**: Refine your query and search again. Stop iterating when:
+   - You have a high-confidence answer with supporting evidence, OR
+   - Two consecutive rounds return no new information (low scores, repeated results), OR
+   - The topic is clearly outside the indexed content.
+
+5. **Check in with the user** every 2–3 rounds: briefly state what you have found so far and ask if you should continue or refocus.
+
+6. **If information is not found**: Tell the user the topic is not in the local database. Suggest searching online and offer to help index new content with `quickrag-ti prepare --docs <path>` or `quickrag-ti prepare --sdk <path>`.
+
+7. **Conclude**: Synthesize all findings into a clear answer. Cite source file paths, symbol names, doc sections, and page numbers. Flag any inconsistencies between docs and code.
+
+## Available MCP tools
+- `search_code(query, top_k)` — semantic search over indexed code symbols
+- `search_docs(query, top_k)` — semantic search over indexed documentation
+- `list_symbols(pattern)` — list code symbols matching a glob pattern
+- `get_symbol(name)` — retrieve full source of a specific symbol
+"""
+
 
 @click.group()
 @click.version_option(__version__)
@@ -228,6 +258,82 @@ def _mcp_install_global():
         click.echo(f"✓ MCP server is now available system-wide for {agents_str}!")
     else:
         click.echo("Warning: MCP server could not be installed to any agent.", err=True)
+
+
+# ---------------------------------------------------------------------------
+# skills install / wikirag
+# ---------------------------------------------------------------------------
+
+@cli.group("skills")
+def skills():
+    """Manage agent workflow skills (slash commands)."""
+
+
+@skills.command("install")
+@click.option("--ai", type=click.Choice(["gemini", "claude"]), help="AI tool to install for")
+@click.option("--global", "global_install", is_flag=True, help="Install skills system-wide for all agents")
+def skills_install(ai: str | None, global_install: bool):
+    """Install the /wikirag workflow skill."""
+    if global_install:
+        _skills_install_global()
+    else:
+        if not ai:
+            click.echo("Error: --ai=gemini|claude is required (or use --global)", err=True)
+            sys.exit(1)
+        _skills_install(ai, global_install=False)
+
+
+def _skills_install(ai: str, global_install: bool) -> None:
+    """Install wikirag.md skill for a specific agent."""
+    if ai == "claude":
+        if global_install:
+            cmd_dir = Path.home() / ".claude" / "commands"
+        else:
+            cmd_dir = Path.cwd() / ".claude" / "commands"
+    elif ai == "gemini":
+        if global_install:
+            cmd_dir = Path.home() / ".gemini" / "commands"
+        else:
+            cmd_dir = Path.cwd() / ".gemini" / "commands"
+    else:
+        click.echo(f"Error: Unknown AI tool '{ai}'", err=True)
+        sys.exit(1)
+
+    cmd_dir.mkdir(parents=True, exist_ok=True)
+    skill_file = cmd_dir / "wikirag.md"
+
+    with open(skill_file, "w") as f:
+        f.write(WIKIRAG_SKILL_CONTENT)
+
+    click.echo(f"✓ Installed /wikirag skill for {ai}")
+    click.echo(f"  File: {skill_file}")
+
+
+def _skills_install_global() -> None:
+    """Install wikirag.md skill for all detected agents (global)."""
+    available_agents = _detect_available_agents()
+    if not available_agents:
+        click.echo("Error: No CLI agents found (gemini or claude)", err=True)
+        click.echo("Please install Gemini CLI or Claude Code first.", err=True)
+        sys.exit(1)
+
+    click.echo(f"Detected available agents: {', '.join(available_agents)}")
+    click.echo()
+
+    installed = []
+    for agent in available_agents:
+        try:
+            _skills_install(agent, global_install=True)
+            installed.append(agent)
+        except Exception as e:
+            click.echo(f"Warning: Failed to install skill for {agent}: {e}", err=True)
+
+    click.echo()
+    if installed:
+        agents_str = " and ".join(installed)
+        click.echo(f"✓ /wikirag skill is now available system-wide for {agents_str}!")
+    else:
+        click.echo("Warning: /wikirag skill could not be installed to any agent.", err=True)
 
 
 # ---------------------------------------------------------------------------
