@@ -37,7 +37,7 @@ Given: $ARGUMENTS (your question or topic)
 
 5. **Check in with the user** every 2–3 rounds: briefly state what you have found so far and ask if you should continue or refocus.
 
-6. **If information is not found**: Tell the user the topic is not in the local database. Suggest searching online and offer to help index new content with `quickrag-ti prepare --docs <path>` or `quickrag-ti prepare --sdk <path>`.
+6. **If information is not found**: Tell the user the topic is not in the local database. Suggest searching online and offer to help index new content with `raghub prepare --docs <path>` or `raghub prepare --sdk <path>`.
 
 7. **Conclude**: Synthesize all findings into a clear answer. Cite source file paths, symbol names, doc sections, and page numbers. Flag any inconsistencies between docs and code.
 
@@ -52,7 +52,7 @@ Given: $ARGUMENTS (your question or topic)
 @click.group()
 @click.version_option(__version__)
 def cli():
-    """QuickRAG-TI: semantic + structural search for TI SDKs and docs."""
+    """raghub: build semantic RAG databases from your code and docs."""
 
 
 # ---------------------------------------------------------------------------
@@ -112,20 +112,20 @@ def _mcp_install(ai: str):
     import shutil
     import subprocess
 
-    mcp_cmd = shutil.which("quickrag-ti-mcp-server")
+    mcp_cmd = shutil.which("raghub-mcp-server")
     if not mcp_cmd:
-        click.echo("Error: quickrag-ti-mcp-server not found in PATH", err=True)
+        click.echo("Error: raghub-mcp-server not found in PATH", err=True)
         sys.exit(1)
 
     if ai == "gemini":
         try:
             result = subprocess.run(
-                ["gemini", "mcp", "add", "quickrag-ti", mcp_cmd],
+                ["gemini", "mcp", "add", "raghub", mcp_cmd],
                 capture_output=True,
                 text=True,
             )
             if result.returncode == 0:
-                click.echo(f"✓ Gemini MCP server 'quickrag-ti' registered")
+                click.echo(f"✓ Gemini MCP server 'raghub' registered")
                 click.echo(f"  Run `gemini mcp list` to verify installation")
             else:
                 click.echo(f"Error: Failed to register MCP server with Gemini", err=True)
@@ -139,12 +139,12 @@ def _mcp_install(ai: str):
     elif ai == "claude":
         try:
             result = subprocess.run(
-                ["claude", "mcp", "add", "quickrag-ti", mcp_cmd],
+                ["claude", "mcp", "add", "raghub", mcp_cmd],
                 capture_output=True,
                 text=True,
             )
             if result.returncode == 0:
-                click.echo(f"✓ Claude MCP server 'quickrag-ti' registered")
+                click.echo(f"✓ Claude MCP server 'raghub' registered")
                 click.echo(f"  Run `claude mcp list` to verify installation")
             else:
                 click.echo(f"Error: Failed to register MCP server with Claude", err=True)
@@ -185,7 +185,7 @@ def _mcp_install_global_config(mcp_cmd: str, agent: str) -> bool:
         if "mcpServers" not in config:
             config["mcpServers"] = {}
 
-        config["mcpServers"]["quickrag-ti"] = {
+        config["mcpServers"]["raghub"] = {
             "command": mcp_cmd,
             "args": [],
             "trust": True,
@@ -194,7 +194,7 @@ def _mcp_install_global_config(mcp_cmd: str, agent: str) -> bool:
         with open(config_file, "w") as f:
             json.dump(config, f, indent=2)
 
-        click.echo(f"✓ Gemini MCP server 'quickrag-ti' installed")
+        click.echo(f"✓ Gemini MCP server 'raghub' installed")
         click.echo(f"  Config: {config_file}")
         return True
 
@@ -212,7 +212,7 @@ def _mcp_install_global_config(mcp_cmd: str, agent: str) -> bool:
         if "mcpServers" not in config:
             config["mcpServers"] = {}
 
-        config["mcpServers"]["quickrag-ti"] = {
+        config["mcpServers"]["raghub"] = {
             "command": mcp_cmd,
             "args": [],
         }
@@ -220,7 +220,7 @@ def _mcp_install_global_config(mcp_cmd: str, agent: str) -> bool:
         with open(config_file, "w") as f:
             json.dump(config, f, indent=2)
 
-        click.echo(f"✓ Claude MCP server 'quickrag-ti' installed")
+        click.echo(f"✓ Claude MCP server 'raghub' installed")
         click.echo(f"  Config: {config_file}")
         return True
 
@@ -231,9 +231,9 @@ def _mcp_install_global():
     """Install MCP server system-wide for all available agents."""
     import shutil
 
-    mcp_cmd = shutil.which("quickrag-ti-mcp-server")
+    mcp_cmd = shutil.which("raghub-mcp-server")
     if not mcp_cmd:
-        click.echo("Error: quickrag-ti-mcp-server not found in PATH", err=True)
+        click.echo("Error: raghub-mcp-server not found in PATH", err=True)
         sys.exit(1)
 
     # Detect available agents
@@ -258,6 +258,20 @@ def _mcp_install_global():
         click.echo(f"✓ MCP server is now available system-wide for {agents_str}!")
     else:
         click.echo("Warning: MCP server could not be installed to any agent.", err=True)
+
+
+# ---------------------------------------------------------------------------
+# install (top-level shortcut: auto-installs MCP for all detected agents)
+# ---------------------------------------------------------------------------
+
+@cli.command("install")
+@click.option("--ai", type=click.Choice(["gemini", "claude"]), help="AI tool to install for (default: auto-detect all)")
+def install(ai: str | None):
+    """Install the raghub MCP server for your AI agent(s)."""
+    if ai:
+        _mcp_install(ai)
+    else:
+        _mcp_install_global()
 
 
 # ---------------------------------------------------------------------------
@@ -481,10 +495,10 @@ def search_code(query: str, top_k: int):
 
     db = code_db_path()
     if db is None:
-        click.echo("No active version set. Run `quickrag-ti mcp active <version>`.", err=True)
+        click.echo("No active version set. Run `raghub mcp active <version>`.", err=True)
         sys.exit(1)
     if not db.exists():
-        click.echo(f"code.db not found at {db}. Run `quickrag-ti prepare` first.", err=True)
+        click.echo(f"code.db not found at {db}. Run `raghub prepare` first.", err=True)
         sys.exit(1)
 
     q_emb = embed_one(query)
@@ -516,10 +530,10 @@ def search_trm(query: str, top_k: int):
 
     db = docs_db_path()
     if db is None:
-        click.echo("No active version set. Run `quickrag-ti mcp active <version>`.", err=True)
+        click.echo("No active version set. Run `raghub mcp active <version>`.", err=True)
         sys.exit(1)
     if not db.exists():
-        click.echo(f"docs.db not found at {db}. Run `quickrag-ti prepare --docs` first.", err=True)
+        click.echo(f"docs.db not found at {db}. Run `raghub prepare --docs` first.", err=True)
         sys.exit(1)
 
     q_emb = embed_one(query)
@@ -551,10 +565,10 @@ def get_symbol(name: str):
 
     db = code_db_path()
     if db is None:
-        click.echo("No active version set. Run `quickrag-ti mcp active <version>`.", err=True)
+        click.echo("No active version set. Run `raghub mcp active <version>`.", err=True)
         sys.exit(1)
     if not db.exists():
-        click.echo(f"code.db not found at {db}. Run `quickrag-ti prepare` first.", err=True)
+        click.echo(f"code.db not found at {db}. Run `raghub prepare` first.", err=True)
         sys.exit(1)
 
     result = db_get_symbol(db, name)

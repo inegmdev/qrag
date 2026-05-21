@@ -1,4 +1,4 @@
-"""MCP server for QuickRAG-TI.
+"""MCP server for raghub.
 
 Implements the Model Context Protocol over JSON-RPC / stdio.
 """
@@ -17,7 +17,7 @@ def _ensure_active_version() -> tuple[Path, Path]:
     cfg = load_global()
     active = cfg.get("active_version")
     if not active:
-        raise RuntimeError("No active version set. Run `quickrag-ti mcp active <version>` first.")
+        raise RuntimeError("No active version set. Run `raghub mcp active <version>` first.")
 
     code_db = CACHE_DIR / active / "code.db"
     docs_db = CACHE_DIR / active / "docs.db"
@@ -155,7 +155,7 @@ def handle_request(request: dict) -> dict:
                 "protocolVersion": "2024-11-05",
                 "capabilities": {"tools": {}},
                 "serverInfo": {
-                    "name": "quickrag-ti",
+                    "name": "raghub",
                     "version": "0.1.0",
                 },
             },

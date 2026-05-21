@@ -1,10 +1,10 @@
 2026-05-13 — Issue 001 complete: project scaffold + search-code E2E verified.
 
-All code was pre-authored (pyproject.toml, src/quickrag_ti/{cli,database,embedder,chunker,config}.py,
+All code was pre-authored (pyproject.toml, src/raghub/{cli,database,embedder,chunker,config}.py,
 tests/fixtures/sample.c). Verified E2E:
-  - `quickrag-ti prepare --soc AM62x --sdk tests/fixtures --output v0.0-fixture`
+  - `raghub prepare --soc AM62x --sdk tests/fixtures --output v0.0-fixture`
     → 8 chunks extracted and embedded via all-MiniLM-L6-v2, stored in code.db via sqlite-vec
-  - `quickrag-ti search-code "enable error correction"`
+  - `raghub search-code "enable error correction"`
     → returns enable_ecc (score=0.543) as top result, ranked correctly
 All acceptance criteria in issues/001-scaffold-search-code-e2e.md are met.
 
@@ -20,13 +20,13 @@ Changes:
   - database.py: added delete_chunks_for_file() (upsert: re-run never duplicates)
     and get_symbol() for exact symbol lookup
   - cli.py: prepare now shows progress bars (chunking + batch embedding);
-    new `quickrag-ti get-symbol <name>` command added
+    new `raghub get-symbol <name>` command added
   - pyproject.toml: tree-sitter>=0.22,<0.26 and tree-sitter-c>=0.21 added
 
 Verified on toy fixture:
   - 14 chunks extracted (vs 8 with regex): 8 functions + 2 structs + 4 macros
-  - `quickrag-ti search-code "initialize SRAM memory"` → sram_init top result (0.57)
-  - `quickrag-ti get-symbol sram_init` → prints full function body
+  - `raghub search-code "initialize SRAM memory"` → sram_init top result (0.57)
+  - `raghub get-symbol sram_init` → prints full function body
   - Re-run of prepare keeps chunk count at 14 (upsert working)
   - Large-function split test: 200-line/600-token fn → 2 sub-chunks with 64-token overlap
 
@@ -47,9 +47,9 @@ Changes:
   - tests/fixtures/sample_trm.pdf + sample_trm.html: synthetic AM62x TRM fixtures (6+7 sections)
 
 Verified E2E:
-  - `quickrag-ti prepare --soc AM62x --docs tests/fixtures --output v0.0-fixture`
+  - `raghub prepare --soc AM62x --docs tests/fixtures --output v0.0-fixture`
     → 13 sections extracted (6 PDF + 7 HTML), embedded, stored in docs.db
-  - `quickrag-ti search-trm "ECC SRAM configuration"` → ECC sections ranked top (score ~0.61-0.69)
+  - `raghub search-trm "ECC SRAM configuration"` → ECC sections ranked top (score ~0.61-0.69)
     with page references and feature_tags
   - Re-run keeps count at 13 (upsert working)
 
@@ -62,7 +62,7 @@ Changes:
     delete_database() functions; uses gh CLI for auth/API; supports GITHUB_TOKEN env var
   - cli.py: added push, list-databases, download, delete commands; push refuses to overwrite
     without --force; download sets active version after successful fetch
-  - config.py: repo_url() checks QUICKRAG_GITHUB_URL env var first, falls back to config.json;
+  - config.py: repo_url() checks RAGHUB_GITHUB_URL env var first, falls back to config.json;
     set_repo_url() and manifest_path() helper functions added
 
 Features:
@@ -97,14 +97,14 @@ Changes:
   - Config paths:
     * Gemini: ~/.config/gcloud/gcloud-mcp-servers-config.json
     * Claude: ~/.claude/claude.json
-  - Entry point: python -m quickrag_ti.mcp_server (runs JSON-RPC server on stdio)
+  - Entry point: python -m raghub.mcp_server (runs JSON-RPC server on stdio)
 
 Verified acceptance criteria:
-  - ✓ `quickrag-ti mcp install --ai=gemini` creates Gemini MCP config correctly
-  - ✓ `quickrag-ti mcp install --ai=claude` creates Claude MCP config correctly
-  - ✓ `quickrag-ti mcp active <version>` sets active version in ~/.quickrag-ti/config.json
-  - ✓ `quickrag-ti mcp status` shows active version, code.db + docs.db paths, existence status
-  - ✓ `quickrag-ti mcp info` prints active version's config.json (soc, embedding_model, etc)
+  - ✓ `raghub mcp install --ai=gemini` creates Gemini MCP config correctly
+  - ✓ `raghub mcp install --ai=claude` creates Claude MCP config correctly
+  - ✓ `raghub mcp active <version>` sets active version in ~/.raghub/config.json
+  - ✓ `raghub mcp status` shows active version, code.db + docs.db paths, existence status
+  - ✓ `raghub mcp info` prints active version's config.json (soc, embedding_model, etc)
   - ✓ MCP server exports search_code, search_trm, get_symbol_definition, list_symbols tools
   - ✓ Config files written to correct locations with correct tool invocation syntax
   - ✓ list_symbols supports pattern filtering (case-insensitive substring match)
@@ -121,12 +121,12 @@ All issues 001-005 complete. Next: Issue 006 — Polish: tests, logging, error h
 Changes to issue 005 implementation:
   - Fixed: Updated mcp install to use proper `gemini/claude mcp add` commands instead of
     manually editing config files (which were being ignored by CLI v0.42.0+)
-  - Fixed: Created dedicated `quickrag-ti-mcp-server` entry point in pyproject.toml for more
-    reliable subprocess invocation (instead of `python3 -m quickrag_ti.mcp_server`)
-  - Fixed: Changed from relative command to full absolute path (/home/inegm/.local/bin/quickrag-ti-mcp-server)
+  - Fixed: Created dedicated `raghub-mcp-server` entry point in pyproject.toml for more
+    reliable subprocess invocation (instead of `python3 -m raghub.mcp_server`)
+  - Fixed: Changed from relative command to full absolute path (/home/inegm/.local/bin/raghub-mcp-server)
     to ensure MCP server is accessible regardless of PATH or working directory
-  - New Feature: Added `--global` flag to `quickrag-ti mcp install` command:
-    * `quickrag-ti mcp install --global` → registers MCP server globally in:
+  - New Feature: Added `--global` flag to `raghub mcp install` command:
+    * `raghub mcp install --global` → registers MCP server globally in:
       - ~/.gemini/settings.json (Gemini global config)
       - ~/.claude.json (Claude global config)
     * MCP server now available system-wide for all projects (not just the current project)
@@ -138,14 +138,14 @@ Changes to issue 005 implementation:
     * Updated MCP server entry point documentation
 
 Verification:
-  - ✓ `quickrag-ti mcp install --global` successfully registers MCP server for both CLIs
-  - ✓ `gemini mcp list` shows ✓ quickrag-ti - Connected (global)
-  - ✓ `claude mcp list` shows ✓ quickrag-ti - Connected (global)
+  - ✓ `raghub mcp install --global` successfully registers MCP server for both CLIs
+  - ✓ `gemini mcp list` shows ✓ raghub - Connected (global)
+  - ✓ `claude mcp list` shows ✓ raghub - Connected (global)
   - ✓ MCP server accessible from any directory/project
   - ✓ README and help text updated with new usage information
 
 Additional Enhancement - Auto-detection of Available Agents:
-  - Enhanced `quickrag-ti mcp install --global` to auto-detect available CLI agents
+  - Enhanced `raghub mcp install --global` to auto-detect available CLI agents
   - New _detect_available_agents() function checks for installed gemini and claude CLIs
   - New _mcp_install_global_config() function handles installation for specific agents
   - When --global is used without --ai, automatically installs for all detected agents

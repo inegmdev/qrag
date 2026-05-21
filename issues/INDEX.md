@@ -1,4 +1,4 @@
-# QuickRAG-TI Issues
+# raghub Issues
 
 | # | Title | Type | Status | Blocked by |
 |---|-------|------|--------|------------|
