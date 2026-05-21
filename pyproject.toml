@@ -3,9 +3,9 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "quickrag-ti"
+name = "raghub"
 version = "0.1.0"
-description = "Semantic + structural code/doc indexing for TI SDK LLM agents"
+description = "Build semantic RAG databases from your code and docs — once per team, instant for every AI agent"
 requires-python = ">=3.10"
 dependencies = [
     "click>=8.1",
@@ -19,8 +19,9 @@ dependencies = [
 ]
 
 [project.scripts]
-quickrag-ti = "quickrag_ti.cli:cli"
-quickrag-ti-mcp-server = "quickrag_ti.mcp_server:run"
+raghub = "raghub.cli:cli"
+rhub = "raghub.cli:cli"
+raghub-mcp-server = "raghub.mcp_server:run"
 
 [tool.setuptools.packages.find]
 where = ["src"]

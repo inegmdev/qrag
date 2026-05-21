@@ -1,4 +1,4 @@
-# QuickRAG-TI: Complete System Design
+# raghub: Complete System Design
 
 **Project:** Semantic + Structural Code & Documentation Indexing for LLMs  
 **Status:** Design Complete - Ready for Implementation  
@@ -8,7 +8,7 @@
 
 ## 1. Executive Summary
 
-**QuickRAG-TI** is a Python CLI tool and MCP server that enables teams to quickly understand large vendor SDKs (TI RTOS, Vector BSW) and technical documentation (TRMs, datasheets) by providing both semantic search (via embeddings) and structural navigation (via symbol indexing) to LLM agents (Gemini, Claude).
+**raghub** is a Python CLI tool and MCP server that enables teams to quickly understand large vendor SDKs (TI RTOS, Vector BSW) and technical documentation (TRMs, datasheets) by providing both semantic search (via embeddings) and structural navigation (via symbol indexing) to LLM agents (Gemini, Claude).
 
 **Key Innovation:** One team member prepares the index once; the entire team uses pre-computed embeddings + symbol tables, dramatically reducing token usage and improving code understanding quality.
 
@@ -41,7 +41,7 @@ PREPARATION (one person, runs once per SDK update):
   Source SDKs + Docs → Parse + Chunk → Embed → SQLite DBs → Push to GitHub
 
 TEAM USAGE (all developers):
-  Download v1.0-am62x → quickrag-ti mcp install --ai=gemini → Use in Gemini CLI
+  Download v1.0-am62x → raghub mcp install --ai=gemini → Use in Gemini CLI
 
 MCP RUNTIME:
   Agent query → MCP tools → SQLite search → Return results → Agent explains
@@ -95,17 +95,17 @@ CREATE TABLE doc_sections (
 
 ### 4.2 Config Files
 
-**~/.quickrag-ti/config.json** (Global):
+**~/.raghub/config.json** (Global):
 ```json
 {
   "repo_type": "github",
-  "repo_url": "https://github.com/user/quickrag-ti-databases",
+  "repo_url": "https://github.com/user/raghub-databases",
   "active_version": "v1.0-am62x",
-  "cache_dir": "~/.quickrag-ti"
+  "cache_dir": "~/.raghub"
 }
 ```
 
-**~/.quickrag-ti/v1.0-am62x/config.json** (Version metadata):
+**~/.raghub/v1.0-am62x/config.json** (Version metadata):
 ```json
 {
   "soc": "AM62x",
@@ -125,41 +125,41 @@ CREATE TABLE doc_sections (
 
 **Discovery & Management:**
 ```bash
-quickrag-ti list-databases [--repo github|jforge]
-quickrag-ti download <version-soc>              # e.g., v1.0-am62x
-quickrag-ti delete <version-soc>
+raghub list-databases [--repo github|jforge]
+raghub download <version-soc>              # e.g., v1.0-am62x
+raghub delete <version-soc>
 ```
 
 **Database Preparation (one team member):**
 ```bash
-quickrag-ti prepare \
+raghub prepare \
   --soc AM62x \
   --sdk /path/to/ti-rtos \
   --docs /path/to/docs \
   --output v1.0-am62x
 
-quickrag-ti push <version-soc> [--repo github|jforge]
+raghub push <version-soc> [--repo github|jforge]
 ```
 
 **MCP Server Management:**
 ```bash
-quickrag-ti mcp install --ai=gemini|claude
-quickrag-ti mcp active <version-soc>
-quickrag-ti mcp status
-quickrag-ti mcp info
+raghub mcp install --ai=gemini|claude
+raghub mcp active <version-soc>
+raghub mcp status
+raghub mcp info
 ```
 
 **Search (debugging):**
 ```bash
-quickrag-ti search-code "query text"
-quickrag-ti search-trm "query text"
+raghub search-code "query text"
+raghub search-trm "query text"
 ```
 
 ---
 
 ## 6. MCP Tools
 
-All tools operate on the active SoC (set via `quickrag-ti mcp active`):
+All tools operate on the active SoC (set via `raghub mcp active`):
 
 ### 6.1 search_code(query: str) → list[dict]
 Semantic search across code embeddings. Returns function/struct definitions with snippets.
@@ -230,8 +230,8 @@ List all symbols, optionally filtered by pattern.
 
 ### 7.1 Project Structure (GitHub/JForge repo)
 ```
-quickrag-ti/
-├── src/quickrag_ti/
+raghub/
+├── src/raghub/
 │   ├── __init__.py
 │   ├── cli.py                       # CLI commands
 │   ├── embedder.py                  # Embedding & chunking
@@ -248,7 +248,7 @@ quickrag-ti/
 
 ### 7.2 User Data Structure
 ```
-~/.quickrag-ti/
+~/.raghub/
 ├── config.json                       # Global config
 ├── v1.0-am62x/
 │   ├── code.db                       # Code embeddings + symbols
@@ -310,7 +310,7 @@ quickrag-ti/
 ## 10. Success Criteria
 
 - [ ] Team can download v1.0-am62x in <1 minute
-- [ ] `quickrag-ti mcp install --ai=gemini` works without manual config
+- [ ] `raghub mcp install --ai=gemini` works without manual config
 - [ ] Agent can answer "how is ECC enabled in SRAM on AM62x?" with code + TRM references
 - [ ] Token usage for code understanding reduced by 40-60% vs. manual file reading
 - [ ] Team consensus that code navigation is faster and more accurate

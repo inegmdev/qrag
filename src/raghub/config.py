@@ -2,7 +2,7 @@ import json
 import os
 from pathlib import Path
 
-CACHE_DIR = Path.home() / ".quickrag-ti"
+CACHE_DIR = Path.home() / ".raghub"
 GLOBAL_CONFIG = CACHE_DIR / "config.json"
 
 _DEFAULTS = {
@@ -49,7 +49,7 @@ def docs_db_path() -> Path | None:
 
 
 def repo_url() -> str | None:
-    env_url = os.getenv("QUICKRAG_GITHUB_URL")
+    env_url = os.getenv("RAGHUB_GITHUB_URL")
     if env_url:
         return env_url
     cfg = load_global()
