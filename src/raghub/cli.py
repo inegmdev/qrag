@@ -378,6 +378,15 @@ def _skills_install_global() -> None:
 # prepare
 # ---------------------------------------------------------------------------
 
+def _sha256(path: Path) -> str:
+    import hashlib
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for block in iter(lambda: f.read(65536), b""):
+            h.update(block)
+    return h.hexdigest()
+
+
 def _detect_input_type(d: Path) -> tuple[list[Path], list[Path]]:
     """Return (code_files, doc_files) found under d."""
     code = sorted(d.rglob("*.c")) + sorted(d.rglob("*.h"))
@@ -399,12 +408,17 @@ def _detect_input_type(d: Path) -> tuple[list[Path], list[Path]]:
               help="Embedding device: auto detects CUDA and falls back to CPU")
 @click.option("--limit-cpu", default=None, type=int,
               help="Max CPU cores for parallel chunking (default: all available cores)")
-def prepare(input_dirs: tuple[Path, ...], output: str, device: str, limit_cpu: int | None):
+@click.option("--force", is_flag=True,
+              help="Force full rebuild, ignoring incremental state")
+def prepare(input_dirs: tuple[Path, ...], output: str, device: str, limit_cpu: int | None, force: bool):
     """Parse, embed, and store code and/or docs into a named database.
 
     Each -i directory is scanned automatically: .c/.h files go into code.db,
     .pdf/.html/.htm files go into docs.db. Pass -i multiple times to combine
     directories.
+
+    On re-run, only changed files are re-embedded. Use --force to rebuild
+    everything from scratch.
     """
     from .embedder import resolve_device
 
@@ -426,19 +440,23 @@ def prepare(input_dirs: tuple[Path, ...], output: str, device: str, limit_cpu: i
     out_dir = CACHE_DIR / output
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    all_code_files: list[Path] = []
-    all_doc_files: list[Path] = []
+    # Group files by their input directory (needed for manifest rel_path computation)
+    code_by_dir: dict[Path, list[Path]] = {}
+    doc_by_dir: dict[Path, list[Path]] = {}
 
     for d in input_dirs:
         code_files, doc_files = _detect_input_type(d)
         if code_files:
             click.echo(f"[code] {d} — {len(code_files)} .c/.h file(s)")
-            all_code_files.extend(code_files)
+            code_by_dir[d] = code_files
         if doc_files:
             click.echo(f"[docs] {d} — {len(doc_files)} .pdf/.html file(s)")
-            all_doc_files.extend(doc_files)
+            doc_by_dir[d] = doc_files
         if not code_files and not doc_files:
             click.echo(f"[warn] {d} — no .c/.h or .pdf/.html files found, skipping")
+
+    all_code_files = [f for files in code_by_dir.values() for f in files]
+    all_doc_files = [f for files in doc_by_dir.values() for f in files]
 
     if not all_code_files and not all_doc_files:
         click.echo("No .c/.h or .pdf/.html files found in any input directory.", err=True)
@@ -449,99 +467,223 @@ def prepare(input_dirs: tuple[Path, ...], output: str, device: str, limit_cpu: i
     # ── Code indexing ──────────────────────────────────────────────────────
     if all_code_files:
         from .chunker import chunk_c_file
-        from .database import delete_chunks_for_file, init_code_db, insert_code_chunk
+        from .database import (
+            delete_chunks_for_file, init_code_db, insert_code_chunk,
+            load_manifest, upsert_manifest_row, delete_manifest_row,
+        )
         from .embedder import embed
 
         db_path = out_dir / "code.db"
+        if force and db_path.exists():
+            db_path.unlink()
         init_code_db(db_path)
 
-        for cf in all_code_files:
-            delete_chunks_for_file(db_path, str(cf))
+        # Build walk: {(input_root_str, rel_str): mtime}
+        walk: dict[tuple[str, str], float] = {}
+        for d, files in code_by_dir.items():
+            root = str(d.resolve())
+            for f in files:
+                walk[(root, str(f.relative_to(d)))] = f.stat().st_mtime
 
-        all_chunks = []
-        workers = limit_cpu  # None → ProcessPoolExecutor uses os.cpu_count()
-        with ProcessPoolExecutor(max_workers=workers) as executor:
-            futures = {executor.submit(chunk_c_file, cf): cf for cf in all_code_files}
-            with click.progressbar(length=len(all_code_files), label="  Chunking code", width=60) as bar:
-                for future in as_completed(futures):
-                    try:
-                        all_chunks.extend(future.result())
-                    except Exception as e:
-                        click.echo(f"\n  Warning: failed to chunk {futures[future]}: {e}", err=True)
-                    bar.update(1)
+        manifest = load_manifest(db_path)
 
-        if not all_chunks:
-            click.echo("No symbols extracted from code files.", err=True)
-            sys.exit(1)
+        # Root mismatch check (skip when manifest is empty or --force)
+        if manifest and not force:
+            stored_roots = {r for (r, _) in manifest}
+            current_roots = {r for (r, _) in walk}
+            if stored_roots != current_roots:
+                click.echo(
+                    "Error: -i roots differ from those stored in the manifest. "
+                    "Use --force to rebuild from scratch.", err=True
+                )
+                sys.exit(1)
 
-        click.echo(f"  Extracted {len(all_chunks)} chunk(s). Embedding...")
-        batch_size = 256
-        code_stored = 0
-        with click.progressbar(range(0, len(all_chunks), batch_size), label="  Embedding", width=60) as bar:
-            for start in bar:
-                batch = all_chunks[start : start + batch_size]
-                embeddings = embed([c.code_text for c in batch], device=resolved_device)
-                for chunk, emb in zip(batch, embeddings):
-                    insert_code_chunk(
-                        db_path,
-                        symbol_name=chunk.symbol_name,
-                        file_path=chunk.file_path,
-                        line_start=chunk.line_start,
-                        line_end=chunk.line_end,
-                        code_text=chunk.code_text,
-                        chunk_type=chunk.chunk_type,
-                        embedding=emb,
-                    )
-                code_stored += len(batch)
-        click.echo(f"  {code_stored} code chunks → {db_path}")
-        _logger.info("prepare: stored %d code chunks in %s", code_stored, db_path)
+        # Compute delta
+        to_process: dict[tuple[str, str], Path] = {}  # (root, rel) → abs_path
+        code_changed = False
+
+        for (root, rel) in set(manifest) - set(walk):
+            delete_chunks_for_file(db_path, str(Path(root) / rel))
+            delete_manifest_row(db_path, rel, root)
+            code_changed = True
+
+        for (root, rel) in set(walk) - set(manifest):
+            to_process[(root, rel)] = Path(root) / rel
+
+        for (root, rel) in set(walk) & set(manifest):
+            curr_mtime = walk[(root, rel)]
+            stored_mtime, stored_sha = manifest[(root, rel)]
+            if curr_mtime != stored_mtime:
+                abs_p = Path(root) / rel
+                if _sha256(abs_p) != stored_sha:
+                    delete_chunks_for_file(db_path, str(abs_p))
+                    to_process[(root, rel)] = abs_p
+                else:
+                    # mtime-only change (e.g. touch); update mtime without re-embedding
+                    upsert_manifest_row(db_path, rel, root, curr_mtime, stored_sha)
+
+        if to_process:
+            code_changed = True
+            all_chunks = []
+            successful: set[tuple[str, str]] = set()
+            workers = limit_cpu
+            with ProcessPoolExecutor(max_workers=workers) as executor:
+                futures = {
+                    executor.submit(chunk_c_file, abs_p): (root, rel)
+                    for (root, rel), abs_p in to_process.items()
+                }
+                with click.progressbar(length=len(to_process), label="  Chunking code", width=60) as bar:
+                    for future in as_completed(futures):
+                        root, rel = futures[future]
+                        try:
+                            all_chunks.extend(future.result())
+                            successful.add((root, rel))
+                        except Exception as e:
+                            click.echo(
+                                f"\n  Warning: failed to chunk {Path(root) / rel}: {e}", err=True
+                            )
+                        bar.update(1)
+
+            if not all_chunks:
+                click.echo("No symbols extracted from code files.", err=True)
+                sys.exit(1)
+
+            click.echo(f"  Extracted {len(all_chunks)} chunk(s). Embedding...")
+            batch_size = 256
+            code_stored = 0
+            with click.progressbar(range(0, len(all_chunks), batch_size), label="  Embedding", width=60) as bar:
+                for start in bar:
+                    batch = all_chunks[start : start + batch_size]
+                    embeddings = embed([c.code_text for c in batch], device=resolved_device)
+                    for chunk, emb in zip(batch, embeddings):
+                        insert_code_chunk(
+                            db_path,
+                            symbol_name=chunk.symbol_name,
+                            file_path=chunk.file_path,
+                            line_start=chunk.line_start,
+                            line_end=chunk.line_end,
+                            code_text=chunk.code_text,
+                            chunk_type=chunk.chunk_type,
+                            embedding=emb,
+                        )
+                    code_stored += len(batch)
+
+            for (root, rel) in successful:
+                abs_p = to_process[(root, rel)]
+                upsert_manifest_row(db_path, rel, root, abs_p.stat().st_mtime, _sha256(abs_p))
+
+            click.echo(f"  {code_stored} code chunks → {db_path}")
+            _logger.info("prepare: stored %d code chunks in %s", code_stored, db_path)
+
+        if not code_changed:
+            click.echo("[prepare] nothing changed (code)")
 
     # ── Docs indexing ──────────────────────────────────────────────────────
     if all_doc_files:
         from .doc_parser import parse_pdf, parse_html
-        from .database import delete_sections_for_source, init_docs_db, insert_doc_section
+        from .database import (
+            delete_sections_for_source, init_docs_db, insert_doc_section,
+            load_manifest, upsert_manifest_row, delete_manifest_row,
+        )
         from .embedder import embed
 
         ddb_path = out_dir / "docs.db"
+        if force and ddb_path.exists():
+            ddb_path.unlink()
         init_docs_db(ddb_path)
 
-        all_sections = []
-        with click.progressbar(all_doc_files, label="  Parsing docs", width=60) as bar:
-            for df in bar:
-                delete_sections_for_source(ddb_path, str(df))
-                if df.suffix.lower() == ".pdf":
-                    all_sections.extend(parse_pdf(df, doc_type="pdf"))
+        walk_docs: dict[tuple[str, str], float] = {}
+        for d, files in doc_by_dir.items():
+            root = str(d.resolve())
+            for f in files:
+                walk_docs[(root, str(f.relative_to(d)))] = f.stat().st_mtime
+
+        manifest_docs = load_manifest(ddb_path)
+
+        if manifest_docs and not force:
+            stored_roots = {r for (r, _) in manifest_docs}
+            current_roots = {r for (r, _) in walk_docs}
+            if stored_roots != current_roots:
+                click.echo(
+                    "Error: -i roots differ from those stored in the manifest. "
+                    "Use --force to rebuild from scratch.", err=True
+                )
+                sys.exit(1)
+
+        to_process_docs: dict[tuple[str, str], Path] = {}
+        docs_changed = False
+
+        for (root, rel) in set(manifest_docs) - set(walk_docs):
+            delete_sections_for_source(ddb_path, str(Path(root) / rel))
+            delete_manifest_row(ddb_path, rel, root)
+            docs_changed = True
+
+        for (root, rel) in set(walk_docs) - set(manifest_docs):
+            to_process_docs[(root, rel)] = Path(root) / rel
+
+        for (root, rel) in set(walk_docs) & set(manifest_docs):
+            curr_mtime = walk_docs[(root, rel)]
+            stored_mtime, stored_sha = manifest_docs[(root, rel)]
+            if curr_mtime != stored_mtime:
+                abs_p = Path(root) / rel
+                if _sha256(abs_p) != stored_sha:
+                    delete_sections_for_source(ddb_path, str(abs_p))
+                    to_process_docs[(root, rel)] = abs_p
                 else:
-                    all_sections.extend(parse_html(df, doc_type="html"))
+                    upsert_manifest_row(ddb_path, rel, root, curr_mtime, stored_sha)
 
-        if not all_sections:
-            click.echo("No doc sections extracted.", err=True)
-            sys.exit(1)
+        if to_process_docs:
+            docs_changed = True
+            all_sections = []
+            successful_docs: set[tuple[str, str]] = set()
+            to_process_docs_list = list(to_process_docs.items())
+            with click.progressbar(to_process_docs_list, label="  Parsing docs", width=60) as bar:
+                for (root, rel), abs_p in bar:
+                    try:
+                        if abs_p.suffix.lower() == ".pdf":
+                            all_sections.extend(parse_pdf(abs_p, doc_type="pdf"))
+                        else:
+                            all_sections.extend(parse_html(abs_p, doc_type="html"))
+                        successful_docs.add((root, rel))
+                    except Exception as e:
+                        click.echo(f"\n  Warning: failed to parse {abs_p}: {e}", err=True)
 
-        click.echo(f"  Extracted {len(all_sections)} section(s). Embedding...")
-        batch_size = 256
-        docs_stored = 0
-        with click.progressbar(range(0, len(all_sections), batch_size), label="  Embedding", width=60) as bar:
-            for start in bar:
-                batch = all_sections[start : start + batch_size]
-                embeddings = embed([s.content for s in batch], device=resolved_device)
-                for sec, emb in zip(batch, embeddings):
-                    insert_doc_section(
-                        ddb_path,
-                        source_path=sec.source_path,
-                        doc_type=sec.doc_type,
-                        chapter=sec.chapter,
-                        section=sec.section,
-                        subsection=sec.subsection,
-                        title=sec.title,
-                        content=sec.content,
-                        page_range=sec.page_range,
-                        feature_tags=sec.feature_tags,
-                        embedding=emb,
-                    )
-                docs_stored += len(batch)
-        click.echo(f"  {docs_stored} doc sections → {ddb_path}")
-        _logger.info("prepare: stored %d doc sections in %s", docs_stored, ddb_path)
+            if not all_sections:
+                click.echo("No doc sections extracted.", err=True)
+                sys.exit(1)
+
+            click.echo(f"  Extracted {len(all_sections)} section(s). Embedding...")
+            batch_size = 256
+            docs_stored = 0
+            with click.progressbar(range(0, len(all_sections), batch_size), label="  Embedding", width=60) as bar:
+                for start in bar:
+                    batch = all_sections[start : start + batch_size]
+                    embeddings = embed([s.content for s in batch], device=resolved_device)
+                    for sec, emb in zip(batch, embeddings):
+                        insert_doc_section(
+                            ddb_path,
+                            source_path=sec.source_path,
+                            doc_type=sec.doc_type,
+                            chapter=sec.chapter,
+                            section=sec.section,
+                            subsection=sec.subsection,
+                            title=sec.title,
+                            content=sec.content,
+                            page_range=sec.page_range,
+                            feature_tags=sec.feature_tags,
+                            embedding=emb,
+                        )
+                    docs_stored += len(batch)
+
+            for (root, rel) in successful_docs:
+                abs_p = to_process_docs[(root, rel)]
+                upsert_manifest_row(ddb_path, rel, root, abs_p.stat().st_mtime, _sha256(abs_p))
+
+            click.echo(f"  {docs_stored} doc sections → {ddb_path}")
+            _logger.info("prepare: stored %d doc sections in %s", docs_stored, ddb_path)
+
+        if not docs_changed:
+            click.echo("[prepare] nothing changed (docs)")
 
     version_cfg = {"embedding_model": "all-MiniLM-L6-v2"}
     with open(out_dir / "config.json", "w") as f:

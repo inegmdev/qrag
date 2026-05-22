@@ -6,11 +6,14 @@ import sqlite_vec
 
 from raghub.database import (
     delete_chunks_for_file,
+    delete_manifest_row,
     get_symbol,
     init_code_db,
     insert_code_chunk,
     list_symbols,
+    load_manifest,
     search_code,
+    upsert_manifest_row,
 )
 from raghub.embedder import EMBEDDING_DIM, from_blob, to_blob
 
@@ -198,3 +201,68 @@ def test_search_code_top_result_matches_query(tmp_path):
     results = search_code(db_path, emb_a, top_k=2)
     assert len(results) >= 1
     assert results[0]["symbol_name"] == "func_a"
+
+
+# ---------------------------------------------------------------------------
+# file_manifest table
+# ---------------------------------------------------------------------------
+
+
+def test_file_manifest_table_created(tmp_path):
+    db_path = tmp_path / "code.db"
+    init_code_db(db_path)
+    db = sqlite3.connect(str(db_path))
+    tables = {row[0] for row in db.execute(
+        "SELECT name FROM sqlite_master WHERE type='table'"
+    ).fetchall()}
+    db.close()
+    assert "file_manifest" in tables
+
+
+def test_manifest_empty_on_fresh_db(tmp_path):
+    db_path = tmp_path / "code.db"
+    init_code_db(db_path)
+    assert load_manifest(db_path) == {}
+
+
+def test_upsert_and_load_manifest(tmp_path):
+    db_path = tmp_path / "code.db"
+    init_code_db(db_path)
+    upsert_manifest_row(db_path, "src/foo.c", "/root", 1234567.0, "abc123")
+    m = load_manifest(db_path)
+    assert ("/root", "src/foo.c") in m
+    mtime, sha = m[("/root", "src/foo.c")]
+    assert mtime == 1234567.0
+    assert sha == "abc123"
+
+
+def test_upsert_manifest_overwrites_row(tmp_path):
+    db_path = tmp_path / "code.db"
+    init_code_db(db_path)
+    upsert_manifest_row(db_path, "foo.c", "/root", 100.0, "old_sha")
+    upsert_manifest_row(db_path, "foo.c", "/root", 200.0, "new_sha")
+    m = load_manifest(db_path)
+    assert len(m) == 1
+    assert m[("/root", "foo.c")] == (200.0, "new_sha")
+
+
+def test_delete_manifest_row(tmp_path):
+    db_path = tmp_path / "code.db"
+    init_code_db(db_path)
+    upsert_manifest_row(db_path, "foo.c", "/root", 100.0, "abc")
+    upsert_manifest_row(db_path, "bar.c", "/root", 200.0, "def")
+    delete_manifest_row(db_path, "foo.c", "/root")
+    m = load_manifest(db_path)
+    assert ("/root", "foo.c") not in m
+    assert ("/root", "bar.c") in m
+
+
+def test_manifest_keys_include_both_root_and_rel(tmp_path):
+    db_path = tmp_path / "code.db"
+    init_code_db(db_path)
+    upsert_manifest_row(db_path, "foo.c", "/rootA", 1.0, "sha1")
+    upsert_manifest_row(db_path, "foo.c", "/rootB", 2.0, "sha2")
+    m = load_manifest(db_path)
+    assert len(m) == 2
+    assert ("/rootA", "foo.c") in m
+    assert ("/rootB", "foo.c") in m
