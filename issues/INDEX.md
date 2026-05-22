@@ -8,6 +8,10 @@
 | [004](004-database-distribution-github.md) | Database distribution via GitHub Releases | AFK | Open | 002, 003 |
 | [005](005-mcp-server-install.md) | MCP server + `mcp install` | AFK | Open | 002, 003 |
 | [006](006-polish-tests-docs.md) | Polish: tests, logging, error handling, README | HITL | Open | 001–005 |
+| [007](007-publish-pypi-npm.md) | Publish Python package to PyPI + reserve npm package | AFK | Open | 006 |
+| [008](008-gpu-embedding-multicore-chunking.md) | GPU-accelerated embedding + multi-core chunking | AFK | Open | — |
+| [009](009-incremental-database-update.md) | Incremental database update (folder diff) | AFK | Open | — |
+| [010](010-watch-folder-live-update.md) | Watch folder for live database updates (`--watch`) | AFK | Open | 009 |
 
 ## Statuses
 - **Open** — not started

@@ -152,3 +152,31 @@ Additional Enhancement - Auto-detection of Available Agents:
   - Provides clear feedback on which agents were detected and configured
   - Error handling for case where no CLI agents are found
   - Updated README to clarify auto-detection behavior
+
+2026-05-22 — Issues 007–010 scoped and filed (not yet started).
+
+Four new issues added to issues/ after a design session:
+
+  007 — Publish Python package to PyPI + reserve npm package [HIGH]
+    - GitHub Actions tag-triggered workflow (v* tag → build + publish)
+    - PyPI via PYPI_TOKEN secret; npm stub package via NPM_TOKEN secret
+    - Smoke test step in workflow; npm stub README points to PyPI
+    - Blocked by 006
+
+  008 — GPU-accelerated embedding + multi-core chunking [HIGH]
+    - `--device=auto|cpu|cuda` on `rhub prepare` (default: auto)
+    - CUDA auto-detected via torch.cuda.is_available(); printed at session start
+    - `--limit-cpu=N` for chunking parallelism; sanity check against os.cpu_count()
+    - No blockers
+
+  009 — Incremental database update (folder diff) [HIGH]
+    - `file_manifest` table in code.db + docs.db (rel_path, input_root, mtime, sha256)
+    - On re-run with same -o: delta apply (add/modify/delete), nothing written if unchanged
+    - Paths stored relative to -i root (portable); roots stored for change detection
+    - If -i roots changed without --force → hard error; --force = full rebuild
+    - No blockers
+
+  010 — Watch folder for live database updates (`--watch` / `-w`) [LOW]
+    - `rhub prepare -i <dir> -o <name> --watch`; foreground process, Ctrl+C to stop
+    - Uses watchdog library; 500 ms debounce before triggering incremental prepare
+    - Blocked by 009
