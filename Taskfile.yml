@@ -13,6 +13,6 @@ tasks:
     desc: Run the test suite
     cmd: pytest tests/
 
-  run:
+  run-ai:
     desc: Run claude-exec.py — loops until all issues are implemented
     cmd: python docs/claude-exec.py
