@@ -238,3 +238,37 @@ Verified:
   - resolve_device('auto') correctly returns 'cpu' on this machine (no GPU)
 
 Next: Issue 009 — incremental database update (folder diff).
+
+2026-05-22 — Issue 009 complete: incremental database update (folder diff).
+
+Changes:
+  - database.py: file_manifest table added to both init_code_db and init_docs_db
+    (CREATE TABLE IF NOT EXISTS — safe on existing DBs); three new functions:
+    * load_manifest(db_path) → {(input_root, rel_path): (mtime, sha256)}
+    * upsert_manifest_row(db_path, rel_path, input_root, mtime, sha256)
+    * delete_manifest_row(db_path, rel_path, input_root)
+  - cli.py: prepare command rewritten with delta logic:
+    * --force flag added (documented in --help); deletes DB files and does full rebuild
+    * input dirs now grouped by directory (code_by_dir, doc_by_dir) to track rel_path
+    * walk dict built: {(input_root, rel_path): mtime} for all discovered files
+    * root-mismatch check: if stored manifest roots ≠ current -i roots, hard error
+    * delta computed: deleted (remove chunks+manifest row), modified (sha256 check,
+      re-embed), added (chunk+embed+insert), unchanged (skip entirely)
+    * mtime-only changes (content unchanged) update only the manifest mtime
+    * manifest rows written only for successfully processed files
+    * prints "[prepare] nothing changed (code|docs)" when no delta exists
+    * _sha256() helper added for file content hashing
+  - tests/test_database.py: 5 new unit tests for manifest functions
+    (table creation, empty load, upsert, overwrite, delete, multi-root keys)
+  - tests/test_integration.py: 3 new tests:
+    * test_prepare_incremental_nothing_changed (integration): second run prints "nothing changed"
+    * test_prepare_force_rebuilds_everything (integration): --force never prints "nothing changed"
+    * test_prepare_errors_on_root_mismatch: direct DB seeding to verify hard error path
+
+Verified:
+  - All 28 unit tests pass (database + chunker)
+  - All 7 integration tests pass (original 4 + 3 new incremental tests)
+  - raghub prepare --help shows --force with description
+  - Delta correctness: nothing changed, root mismatch, and force rebuild paths all verified
+
+Next: Issue 010 — watch folder for live database updates (`--watch`), blocked on 009 (now unblocked).
