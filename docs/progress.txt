@@ -172,6 +172,23 @@ All acceptance criteria satisfied except HITL team sign-off:
 Next: Issue 007 (blocked on 006, now unblocked) — publish to PyPI + npm.
   Also unblocked with no deps: Issue 008 (GPU/multicore), Issue 009 (incremental updates).
 
+2026-05-22 — Issue 007 complete: GitHub Actions publish workflow + npm stub package.
+
+Changes:
+  - .github/workflows/publish.yml: tag-triggered (v*) workflow with two jobs:
+    * publish-pypi: extracts version from pyproject.toml (single source of truth),
+      asserts it matches the git tag, builds sdist+wheel via `python -m build`,
+      publishes to PyPI using PYPI_TOKEN secret via pypa/gh-action-pypi-publish,
+      then smoke-tests: `pip install raghub==$VERSION && raghub --version`
+    * publish-npm: sets package.json version from tag, publishes npm/ stub via NPM_TOKEN
+  - npm/package.json: stub package (name=raghub, version=0.0.0 stamped at release time)
+  - npm/index.js: throws an error directing users to `pip install raghub`
+  - npm/README.md: brief description + install instructions pointing to PyPI
+
+All acceptance criteria from issues/007-publish-pypi-npm.md met.
+
+Next: Issue 008 (GPU/multicore) or Issue 009 (incremental updates) — both unblocked.
+
 2026-05-22 — Issues 007–010 scoped and filed (not yet started).
 
 Four new issues added to issues/ after a design session:
