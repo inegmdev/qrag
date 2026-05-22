@@ -1,0 +1,18 @@
+version: '3'
+
+tasks:
+  default:
+    desc: List available tasks
+    cmd: task --list
+
+  install:
+    desc: Install raghub in editable mode
+    cmd: pip install -e .
+
+  test:
+    desc: Run the test suite
+    cmd: pytest tests/
+
+  run:
+    desc: Run claude-exec.py — loops until all issues are implemented
+    cmd: python docs/claude-exec.py
