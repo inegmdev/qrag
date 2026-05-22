@@ -42,8 +42,8 @@ def search_code_impl(query: str) -> list[dict]:
     return results
 
 
-def search_trm_impl(query: str) -> list[dict]:
-    """Semantic search across indexed TRM/doc sections."""
+def search_docs_impl(query: str) -> list[dict]:
+    """Semantic search across indexed documentation sections."""
     _, docs_db = _ensure_active_version()
     if not docs_db.exists():
         return []
@@ -86,7 +86,7 @@ def list_symbols_impl(pattern: str = "", limit: int = 200) -> list[dict]:
 # Tool definitions for MCP
 TOOLS = {
     "search_code": {
-        "description": "Search TI AM62x SDK source code (C/H files) by meaning. Use when asked about driver implementations, API usage, how a peripheral works in code, or any question about TI RTOS SDK functions and structures.",
+        "description": "Search indexed source code (C/H files) by meaning. Use when asked about driver implementations, API usage, how something works in code, or any question about SDK functions and structures.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -96,8 +96,8 @@ TOOLS = {
         },
         "impl": search_code_impl,
     },
-    "search_trm": {
-        "description": "Search the TI AM62x Technical Reference Manual (TRM) and datasheet sections. Use when asked about hardware registers, peripheral configuration, interrupt routing, memory maps, or chip architecture.",
+    "search_docs": {
+        "description": "Search indexed documentation sections (PDF/HTML). Use when asked about hardware specs, configuration guides, architecture details, registers, memory maps, or any question answerable from docs.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -105,10 +105,10 @@ TOOLS = {
             },
             "required": ["query"],
         },
-        "impl": search_trm_impl,
+        "impl": search_docs_impl,
     },
     "get_symbol_definition": {
-        "description": "Look up the exact source definition of a TI SDK symbol (function, struct, typedef, or macro) by its precise name. Use when you know the symbol name and need its signature, fields, or implementation.",
+        "description": "Look up the exact source definition of a symbol (function, struct, typedef, or macro) by its precise name. Use when you know the symbol name and need its signature, fields, or implementation.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -119,7 +119,7 @@ TOOLS = {
         "impl": get_symbol_definition_impl,
     },
     "list_symbols": {
-        "description": "List symbols (functions, structs, macros) indexed from the TI AM62x SDK, optionally filtered by a name pattern. Use to discover what is available before searching.",
+        "description": "List symbols (functions, structs, macros) indexed from source code, optionally filtered by a name pattern. Use to discover what is available before searching.",
         "inputSchema": {
             "type": "object",
             "properties": {

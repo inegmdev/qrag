@@ -155,7 +155,6 @@ def init_docs_db(db_path: Path) -> None:
         CREATE TABLE IF NOT EXISTS doc_sections (
             id           INTEGER PRIMARY KEY,
             source_path  TEXT,
-            soc_name     TEXT,
             doc_type     TEXT,
             chapter      INTEGER,
             section      INTEGER,
@@ -192,7 +191,6 @@ def delete_sections_for_source(db_path: Path, source_path: str) -> None:
 def insert_doc_section(
     db_path: Path,
     source_path: str,
-    soc_name: str,
     doc_type: str,
     chapter: int,
     section: int,
@@ -207,11 +205,11 @@ def insert_doc_section(
     cur = db.execute(
         """
         INSERT INTO doc_sections
-          (source_path, soc_name, doc_type, chapter, section, subsection,
+          (source_path, doc_type, chapter, section, subsection,
            title, content, page_range, feature_tags)
-        VALUES (?,?,?,?,?,?,?,?,?,?)
+        VALUES (?,?,?,?,?,?,?,?,?)
         """,
-        (source_path, soc_name, doc_type, chapter, section, subsection,
+        (source_path, doc_type, chapter, section, subsection,
          title, content, page_range, feature_tags),
     )
     section_id = cur.lastrowid

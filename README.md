@@ -31,13 +31,13 @@ pip install -e .
 raghub list-databases
 
 # Download a version
-raghub download v1.0-am62x
+raghub download my-project
 ```
 
 #### 2. Set as Active Version
 
 ```bash
-raghub mcp active v1.0-am62x
+raghub mcp active my-project
 ```
 
 #### 3. Install for Your AI Agent
@@ -59,7 +59,7 @@ You can also use the short alias `rhub` for any command:
 
 ```bash
 rhub install
-rhub prepare --docs /path/to/docs --output v1.0
+rhub prepare -i /path/to/docs -o my-project
 ```
 
 #### 4. Use in Your AI Agent
@@ -87,12 +87,17 @@ raghub mcp info
 ### Advanced: Prepare Your Own Database
 
 ```bash
-raghub prepare \
-  --soc AM62x \
-  --sdk /path/to/sdk \
-  --docs /path/to/docs \
-  --output v1.0-am62x
+# Index code only
+raghub prepare -i /path/to/sdk -o my-project
+
+# Index docs only
+raghub prepare -i /path/to/docs -o my-project
+
+# Index both (separate dirs)
+raghub prepare -i /path/to/sdk -i /path/to/docs -o my-project
 ```
+
+Each `-i` directory is scanned automatically: `.c`/`.h` files go into `code.db`, `.pdf`/`.html`/`.htm` files go into `docs.db`. A directory containing both types will feed both databases.
 
 This will:
 
@@ -100,13 +105,13 @@ This will:
 2. Extract functions, structs, and macros
 3. Parse PDF/HTML documentation sections
 4. Generate embeddings using Sentence-Transformers
-5. Store results in SQLite databases (code.db + docs.db)
+5. Store results in SQLite databases (`code.db` + `docs.db`)
 6. Automatically set as active version
 
 Push to GitHub for team distribution:
 
 ```bash
-raghub push v1.0-am62x
+raghub push my-project
 ```
 
 ---
@@ -165,7 +170,7 @@ raghub/
 
 **`mcp_server.py`** — JSON-RPC 2.0 MCP server over stdio; implements the 4 MCP tools
 
-**`cli.py`** — Click command group (`prepare`, `install`, `mcp`, `push`, `download`, `list-databases`, `delete`, `search-code`, `search-trm`, `get-symbol`, `skills`)
+**`cli.py`** — Click command group (`prepare`, `install`, `mcp`, `push`, `download`, `list-databases`, `delete`, `search-code`, `search-docs`, `get-symbol`, `skills`)
 
 ### Development Workflow
 
@@ -181,12 +186,10 @@ pytest --cov=src/raghub tests/
 ```bash
 PYTHONPATH=src raghub --help
 
-PYTHONPATH=src raghub prepare \
-  --soc AM62x \
-  --sdk tests/fixtures \
-  --output v0.0-dev
+PYTHONPATH=src raghub prepare -i tests/fixtures -o dev
 
 PYTHONPATH=src raghub search-code "error correction"
+PYTHONPATH=src raghub search-docs "configuration"
 PYTHONPATH=src raghub install
 ```
 
@@ -209,7 +212,7 @@ Distribute via GitHub Releases:
 ```bash
 export RAGHUB_GITHUB_URL=https://github.com/your-org/raghub-databases
 
-PYTHONPATH=src raghub prepare --soc AM62x --sdk ... --output v1.0
+PYTHONPATH=src raghub prepare -i /path/to/sdk -i /path/to/docs -o v1.0
 PYTHONPATH=src raghub push v1.0
 ```
 

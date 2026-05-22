@@ -17,7 +17,7 @@ _ABBREV = re.compile(r"\b([A-Z][A-Z0-9]{1,7})\b")
 @dataclass
 class DocSection:
     source_path: str
-    doc_type: str          # "TRM", "Datasheet", "AppNote", "HTML"
+    doc_type: str          # "pdf", "html"
     chapter: int
     section: int
     subsection: str
@@ -86,7 +86,7 @@ def _parse_heading_number(text: str) -> tuple[int, int, str]:
     return ch, se, sub
 
 
-def parse_pdf(path: Path, doc_type: str = "TRM") -> list[DocSection]:
+def parse_pdf(path: Path, doc_type: str = "pdf") -> list[DocSection]:
     import fitz  # PyMuPDF
 
     doc = fitz.open(str(path))
@@ -203,7 +203,7 @@ def _is_boilerplate(tag) -> bool:
     )
 
 
-def parse_html(path: Path, doc_type: str = "HTML") -> list[DocSection]:
+def parse_html(path: Path, doc_type: str = "html") -> list[DocSection]:
     from bs4 import BeautifulSoup, NavigableString, Tag
 
     text = path.read_text(encoding="utf-8", errors="replace")
