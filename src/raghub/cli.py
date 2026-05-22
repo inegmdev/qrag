@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import json
 import logging as _logging
+import os
 import sys
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
 import click
@@ -392,13 +394,35 @@ def _detect_input_type(d: Path) -> tuple[list[Path], list[Path]]:
               type=click.Path(exists=True, file_okay=False, path_type=Path),
               help="Input directory (code and/or docs); repeatable")
 @click.option("-o", "--output", required=True, help="Database name, e.g. my-project")
-def prepare(input_dirs: tuple[Path, ...], output: str):
+@click.option("--device", default="auto", show_default=True,
+              type=click.Choice(["auto", "cpu", "cuda"]),
+              help="Embedding device: auto detects CUDA and falls back to CPU")
+@click.option("--limit-cpu", default=None, type=int,
+              help="Max CPU cores for parallel chunking (default: all available cores)")
+def prepare(input_dirs: tuple[Path, ...], output: str, device: str, limit_cpu: int | None):
     """Parse, embed, and store code and/or docs into a named database.
 
     Each -i directory is scanned automatically: .c/.h files go into code.db,
     .pdf/.html/.htm files go into docs.db. Pass -i multiple times to combine
     directories.
     """
+    from .embedder import resolve_device
+
+    if limit_cpu is not None and limit_cpu > (os.cpu_count() or 1):
+        click.echo(
+            f"Error: --limit-cpu={limit_cpu} exceeds available cores ({os.cpu_count()}).",
+            err=True,
+        )
+        sys.exit(1)
+
+    try:
+        resolved_device = resolve_device(device)
+    except ValueError as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+
+    click.echo(f"[prepare] embedding device: {resolved_device}")
+
     out_dir = CACHE_DIR / output
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -431,11 +455,20 @@ def prepare(input_dirs: tuple[Path, ...], output: str):
         db_path = out_dir / "code.db"
         init_code_db(db_path)
 
+        for cf in all_code_files:
+            delete_chunks_for_file(db_path, str(cf))
+
         all_chunks = []
-        with click.progressbar(all_code_files, label="  Chunking code", width=60) as bar:
-            for cf in bar:
-                delete_chunks_for_file(db_path, str(cf))
-                all_chunks.extend(chunk_c_file(cf))
+        workers = limit_cpu  # None → ProcessPoolExecutor uses os.cpu_count()
+        with ProcessPoolExecutor(max_workers=workers) as executor:
+            futures = {executor.submit(chunk_c_file, cf): cf for cf in all_code_files}
+            with click.progressbar(length=len(all_code_files), label="  Chunking code", width=60) as bar:
+                for future in as_completed(futures):
+                    try:
+                        all_chunks.extend(future.result())
+                    except Exception as e:
+                        click.echo(f"\n  Warning: failed to chunk {futures[future]}: {e}", err=True)
+                    bar.update(1)
 
         if not all_chunks:
             click.echo("No symbols extracted from code files.", err=True)
@@ -447,7 +480,7 @@ def prepare(input_dirs: tuple[Path, ...], output: str):
         with click.progressbar(range(0, len(all_chunks), batch_size), label="  Embedding", width=60) as bar:
             for start in bar:
                 batch = all_chunks[start : start + batch_size]
-                embeddings = embed([c.code_text for c in batch])
+                embeddings = embed([c.code_text for c in batch], device=resolved_device)
                 for chunk, emb in zip(batch, embeddings):
                     insert_code_chunk(
                         db_path,
@@ -491,7 +524,7 @@ def prepare(input_dirs: tuple[Path, ...], output: str):
         with click.progressbar(range(0, len(all_sections), batch_size), label="  Embedding", width=60) as bar:
             for start in bar:
                 batch = all_sections[start : start + batch_size]
-                embeddings = embed([s.content for s in batch])
+                embeddings = embed([s.content for s in batch], device=resolved_device)
                 for sec, emb in zip(batch, embeddings):
                     insert_doc_section(
                         ddb_path,
