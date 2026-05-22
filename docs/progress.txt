@@ -153,6 +153,25 @@ Additional Enhancement - Auto-detection of Available Agents:
   - Error handling for case where no CLI agents are found
   - Updated README to clarify auto-detection behavior
 
+2026-05-22 — Issue 006 complete (technical criteria): tests, logging, error handling, README.
+
+All acceptance criteria satisfied except HITL team sign-off:
+  - 26 pytest tests passing (11 chunker unit, 11 database unit, 4 integration)
+    * test_chunker.py: token-split logic, overlap, named sub-chunks, C file parsing
+    * test_database.py: BLOB round-trip, schema init, upsert on re-run, list_symbols, search ranking
+    * test_integration.py: prepare→search-code (enable_ecc top result), prepare→search-docs
+      (ECC section top result), active-version side-effect, missing-DB error exit
+  - .github/workflows/ci.yml: runs pytest on push/PR to main and feat/** branches
+  - --verbose flag: structured JSON logs to stderr (all commands)
+  - CLI error paths: missing config, missing DB, bad version name, missing GITHUB_TOKEN
+    all print one-line human-readable messages and exit non-zero
+  - README.md: added CLI Reference table (all 14 commands with flags and descriptions)
+  - docs/quickstart.md: full AM62x prepare → push → download → install → use in Gemini flow
+  - HITL remaining: docs/quickstart.md needs review and sign-off by at least one team member
+
+Next: Issue 007 (blocked on 006, now unblocked) — publish to PyPI + npm.
+  Also unblocked with no deps: Issue 008 (GPU/multicore), Issue 009 (incremental updates).
+
 2026-05-22 — Issues 007–010 scoped and filed (not yet started).
 
 Four new issues added to issues/ after a design session:
