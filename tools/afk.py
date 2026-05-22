@@ -5,44 +5,67 @@ import sys
 
 SENTINEL = "!!!ALL TASKS DONE!!!"
 
+AI_CMD = "claude"
+
+AI_CMD_AFK_PARAMS_OPTIONS = [
+    "--dangerously-skip-permissions",
+]
+
+AI_CMD_REALTIME_STDOUT_OUTPUT_OPTIONS = [
+    "--print",
+    "--output-format", "stream-json",
+    "--verbose"
+]
+
+AI_CMD_LOWER_TOKEN_USAGE_OPTIONS = [
+    "--model", "haiku",
+    "--effort", "medium",
+]
+
 PROMPT = (
     "@docs/PRD.md @issues/INDEX.md @docs/progress.txt "
     "1. Read the PRD and progress file. "
     "2. Find the next incomplete task and implement it. "
     "3. Commit your changes. "
-    "4. Update @docs/progress.txt with what you did. "
+    "4. Update @docs/progress.txt @issues/INDEX.md with what you did. "
     "ONLY DO ONE TASK AT A TIME."
     "IF THERE IS NO MORE INCOMPLETE TASKS, THEN PRINT `!!!ALL TASKS DONE!!!`"
 )
 
 
 def run_claude():
+    cmd = [
+        AI_CMD,
+        *AI_CMD_AFK_PARAMS_OPTIONS,
+        *AI_CMD_REALTIME_STDOUT_OUTPUT_OPTIONS,
+        *AI_CMD_LOWER_TOKEN_USAGE_OPTIONS,
+        PROMPT,
+    ]
     proc = subprocess.Popen(
-        [
-            "claude",
-            "--dangerously-skip-permissions",
-            "--print",
-            "--output-format", "stream-json",
-            "--verbose",
-            PROMPT,
-        ],
+        cmd,
         stdout=subprocess.PIPE,
-        stderr=sys.stderr,
+        stderr=subprocess.PIPE,
         text=True,
         bufsize=1,
     )
 
     accumulated = ""
     done = False
+    text_lines = []
 
     for raw in proc.stdout:
         raw = raw.strip()
         if not raw:
             continue
+        text_lines.append(raw)
         try:
             event = json.loads(raw)
         except json.JSONDecodeError:
-            sys.stdout.write(raw + "\n")
+            lower_raw = raw.lower()
+            if "session limit" in lower_raw or "hit your session limit" in lower_raw:
+                sys.stderr.write(f"❌ Claude error: session limit reached. {raw}\n")
+            else:
+                sys.stdout.write(raw + "\n")
             sys.stdout.flush()
             continue
 
@@ -67,7 +90,18 @@ def run_claude():
                 if SENTINEL in accumulated:
                     done = True
 
+    stderr_output = proc.stderr.read().strip() if proc.stderr else ""
     proc.wait()
+
+    if proc.returncode != 0:
+        if stderr_output:
+            sys.stderr.write(f"❌ Claude exit error (code {proc.returncode}): {stderr_output}\n")
+        elif any("session limit" in line.lower() for line in text_lines):
+            sys.stderr.write("❌ Claude exit error: session limit reached. Please retry after the reset time.\n")
+        else:
+            sys.stderr.write(f"❌ Claude exit error: code {proc.returncode}.\n")
+        sys.stderr.flush()
+
     return proc.returncode, done
 
 
