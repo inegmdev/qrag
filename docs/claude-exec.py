@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+import os
+import pty
+import select
 import subprocess
 import sys
 
@@ -14,30 +17,57 @@ PROMPT = (
     "IF THERE IS NO MORE INCOMPLETE TASKS, THEN PRINT `!!!ALL TASKS DONE!!!`"
 )
 
+
+def run_claude():
+    """Run claude under a PTY so it streams output immediately (no pipe buffering)."""
+    master_fd, slave_fd = pty.openpty()
+
+    proc = subprocess.Popen(
+        ["claude", "--dangerously-skip-permissions", "--print", PROMPT],
+        stdout=slave_fd,
+        stderr=slave_fd,
+        stdin=subprocess.DEVNULL,
+        close_fds=True,
+    )
+    os.close(slave_fd)
+
+    buf = ""
+    done = False
+    while True:
+        try:
+            ready, _, _ = select.select([master_fd], [], [], 0.05)
+        except (KeyboardInterrupt, SystemExit):
+            proc.terminate()
+            raise
+
+        if ready:
+            try:
+                data = os.read(master_fd, 4096).decode("utf-8", errors="replace")
+            except OSError:
+                break
+            sys.stdout.write(data)
+            sys.stdout.flush()
+            buf += data
+            if SENTINEL in buf:
+                done = True
+        elif proc.poll() is not None:
+            break
+
+    os.close(master_fd)
+    proc.wait()
+    return proc.returncode, done
+
+
 iteration = 0
 while True:
     iteration += 1
     print(f"\n--- ralph iteration {iteration} ---", flush=True)
 
-    proc = subprocess.Popen(
-        ["claude", "--dangerously-skip-permissions", "--print", PROMPT],
-        stdout=subprocess.PIPE,
-        stderr=sys.stderr,
-        text=True,
-    )
+    returncode, done = run_claude()
 
-    done = False
-    for line in proc.stdout:
-        sys.stdout.write(line)
-        sys.stdout.flush()
-        if SENTINEL in line:
-            done = True
-
-    proc.wait()
-
-    if proc.returncode != 0:
-        print(f"\nralph: claude exited with code {proc.returncode}, stopping.", flush=True)
-        sys.exit(proc.returncode)
+    if returncode != 0:
+        print(f"\nralph: claude exited with code {returncode}, stopping.", flush=True)
+        sys.exit(returncode)
 
     if done:
         print(f"\nralph: all tasks done after {iteration} iteration(s).", flush=True)
