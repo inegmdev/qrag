@@ -37,7 +37,7 @@ Given: $ARGUMENTS (your question or topic)
 
 5. **Check in with the user** every 2–3 rounds: briefly state what you have found so far and ask if you should continue or refocus.
 
-6. **If information is not found**: Tell the user the topic is not in the local database. Suggest searching online and offer to help index new content with `raghub prepare --docs <path>` or `raghub prepare --sdk <path>`.
+6. **If information is not found**: Tell the user the topic is not in the local database. Suggest searching online and offer to help index new content with `raghub prepare -i <path>`.
 
 7. **Conclude**: Synthesize all findings into a clear answer. Cite source file paths, symbol names, doc sections, and page numbers. Flag any inconsistencies between docs and code.
 
@@ -354,22 +354,52 @@ def _skills_install_global() -> None:
 # prepare
 # ---------------------------------------------------------------------------
 
+def _detect_input_type(d: Path) -> tuple[list[Path], list[Path]]:
+    """Return (code_files, doc_files) found under d."""
+    code = sorted(d.rglob("*.c")) + sorted(d.rglob("*.h"))
+    docs = (
+        sorted(d.rglob("*.pdf"))
+        + sorted(d.rglob("*.html"))
+        + sorted(d.rglob("*.htm"))
+    )
+    return code, docs
+
+
 @cli.command()
-@click.option("--soc", required=True, help="SoC name, e.g. AM62x")
-@click.option("--sdk", "sdk_path", type=click.Path(exists=True, path_type=Path), help="Path to SDK / C source root")
-@click.option("--docs", "docs_path", type=click.Path(exists=True, path_type=Path), help="Path to docs root (PDF/HTML)")
-@click.option("--output", required=True, help="Version label, e.g. v1.0-am62x")
-def prepare(soc: str, sdk_path: Path | None, docs_path: Path | None, output: str):
-    """Parse, embed, and store SDK sources and/or docs into a versioned database."""
+@click.option("-i", "--input", "input_dirs", multiple=True, required=True,
+              type=click.Path(exists=True, file_okay=False, path_type=Path),
+              help="Input directory (code and/or docs); repeatable")
+@click.option("-o", "--output", required=True, help="Database name, e.g. my-project")
+def prepare(input_dirs: tuple[Path, ...], output: str):
+    """Parse, embed, and store code and/or docs into a named database.
+
+    Each -i directory is scanned automatically: .c/.h files go into code.db,
+    .pdf/.html/.htm files go into docs.db. Pass -i multiple times to combine
+    directories.
+    """
     out_dir = CACHE_DIR / output
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    if sdk_path is None and docs_path is None:
-        click.echo("Provide at least one of --sdk or --docs.", err=True)
+    all_code_files: list[Path] = []
+    all_doc_files: list[Path] = []
+
+    for d in input_dirs:
+        code_files, doc_files = _detect_input_type(d)
+        if code_files:
+            click.echo(f"[code] {d} — {len(code_files)} .c/.h file(s)")
+            all_code_files.extend(code_files)
+        if doc_files:
+            click.echo(f"[docs] {d} — {len(doc_files)} .pdf/.html file(s)")
+            all_doc_files.extend(doc_files)
+        if not code_files and not doc_files:
+            click.echo(f"[warn] {d} — no .c/.h or .pdf/.html files found, skipping")
+
+    if not all_code_files and not all_doc_files:
+        click.echo("No .c/.h or .pdf/.html files found in any input directory.", err=True)
         sys.exit(1)
 
     # ── Code indexing ──────────────────────────────────────────────────────
-    if sdk_path is not None:
+    if all_code_files:
         from .chunker import chunk_c_file
         from .database import delete_chunks_for_file, init_code_db, insert_code_chunk
         from .embedder import embed
@@ -377,20 +407,14 @@ def prepare(soc: str, sdk_path: Path | None, docs_path: Path | None, output: str
         db_path = out_dir / "code.db"
         init_code_db(db_path)
 
-        c_files = sorted(sdk_path.rglob("*.c")) + sorted(sdk_path.rglob("*.h"))
-        if not c_files:
-            click.echo(f"No .c/.h files found under {sdk_path}", err=True)
-            sys.exit(1)
-
-        click.echo(f"[SDK] Found {len(c_files)} source file(s).")
         all_chunks = []
-        with click.progressbar(c_files, label="  Chunking", width=60) as bar:
+        with click.progressbar(all_code_files, label="  Chunking code", width=60) as bar:
             for cf in bar:
                 delete_chunks_for_file(db_path, str(cf))
                 all_chunks.extend(chunk_c_file(cf))
 
         if not all_chunks:
-            click.echo("No symbols extracted.", err=True)
+            click.echo("No symbols extracted from code files.", err=True)
             sys.exit(1)
 
         click.echo(f"  Extracted {len(all_chunks)} chunk(s). Embedding...")
@@ -415,7 +439,7 @@ def prepare(soc: str, sdk_path: Path | None, docs_path: Path | None, output: str
         click.echo(f"  {code_stored} code chunks → {db_path}")
 
     # ── Docs indexing ──────────────────────────────────────────────────────
-    if docs_path is not None:
+    if all_doc_files:
         from .doc_parser import parse_pdf, parse_html
         from .database import delete_sections_for_source, init_docs_db, insert_doc_section
         from .embedder import embed
@@ -423,24 +447,14 @@ def prepare(soc: str, sdk_path: Path | None, docs_path: Path | None, output: str
         ddb_path = out_dir / "docs.db"
         init_docs_db(ddb_path)
 
-        doc_files = (
-            sorted(docs_path.rglob("*.pdf"))
-            + sorted(docs_path.rglob("*.html"))
-            + sorted(docs_path.rglob("*.htm"))
-        )
-        if not doc_files:
-            click.echo(f"No .pdf/.html files found under {docs_path}", err=True)
-            sys.exit(1)
-
-        click.echo(f"[Docs] Found {len(doc_files)} document(s).")
         all_sections = []
-        with click.progressbar(doc_files, label="  Parsing", width=60) as bar:
+        with click.progressbar(all_doc_files, label="  Parsing docs", width=60) as bar:
             for df in bar:
                 delete_sections_for_source(ddb_path, str(df))
                 if df.suffix.lower() == ".pdf":
-                    all_sections.extend(parse_pdf(df, doc_type="TRM"))
+                    all_sections.extend(parse_pdf(df, doc_type="pdf"))
                 else:
-                    all_sections.extend(parse_html(df, doc_type="HTML"))
+                    all_sections.extend(parse_html(df, doc_type="html"))
 
         if not all_sections:
             click.echo("No doc sections extracted.", err=True)
@@ -457,7 +471,6 @@ def prepare(soc: str, sdk_path: Path | None, docs_path: Path | None, output: str
                     insert_doc_section(
                         ddb_path,
                         source_path=sec.source_path,
-                        soc_name=soc,
                         doc_type=sec.doc_type,
                         chapter=sec.chapter,
                         section=sec.section,
@@ -471,7 +484,7 @@ def prepare(soc: str, sdk_path: Path | None, docs_path: Path | None, output: str
                 docs_stored += len(batch)
         click.echo(f"  {docs_stored} doc sections → {ddb_path}")
 
-    version_cfg = {"soc": soc, "embedding_model": "all-MiniLM-L6-v2"}
+    version_cfg = {"embedding_model": "all-MiniLM-L6-v2"}
     with open(out_dir / "config.json", "w") as f:
         json.dump(version_cfg, f, indent=2)
 
@@ -517,14 +530,14 @@ def search_code(query: str, top_k: int):
 
 
 # ---------------------------------------------------------------------------
-# search-trm
+# search-docs
 # ---------------------------------------------------------------------------
 
-@cli.command("search-trm")
+@cli.command("search-docs")
 @click.argument("query")
 @click.option("--top-k", default=5, show_default=True, help="Number of results to return")
-def search_trm(query: str, top_k: int):
-    """Semantic search over indexed TRM / doc sections."""
+def search_docs_cmd(query: str, top_k: int):
+    """Semantic search over indexed documentation sections."""
     from .database import search_docs as db_search
     from .embedder import embed_one
 
@@ -533,7 +546,7 @@ def search_trm(query: str, top_k: int):
         click.echo("No active version set. Run `raghub mcp active <version>`.", err=True)
         sys.exit(1)
     if not db.exists():
-        click.echo(f"docs.db not found at {db}. Run `raghub prepare --docs` first.", err=True)
+        click.echo(f"docs.db not found at {db}. Run `raghub prepare -i <docs_dir>` first.", err=True)
         sys.exit(1)
 
     q_emb = embed_one(query)
