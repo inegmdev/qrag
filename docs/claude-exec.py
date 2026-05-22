@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
-import os
-import pty
-import select
+import json
 import subprocess
 import sys
 
@@ -19,41 +17,56 @@ PROMPT = (
 
 
 def run_claude():
-    """Run claude under a PTY so it streams output immediately (no pipe buffering)."""
-    master_fd, slave_fd = pty.openpty()
-
     proc = subprocess.Popen(
-        ["claude", "--dangerously-skip-permissions", "--print", PROMPT],
-        stdout=slave_fd,
-        stderr=slave_fd,
-        stdin=subprocess.DEVNULL,
-        close_fds=True,
+        [
+            "claude",
+            "--dangerously-skip-permissions",
+            "--print",
+            "--output-format", "stream-json",
+            "--verbose",
+            PROMPT,
+        ],
+        stdout=subprocess.PIPE,
+        stderr=sys.stderr,
+        text=True,
+        bufsize=1,
     )
-    os.close(slave_fd)
 
-    buf = ""
+    accumulated = ""
     done = False
-    while True:
+
+    for raw in proc.stdout:
+        raw = raw.strip()
+        if not raw:
+            continue
         try:
-            ready, _, _ = select.select([master_fd], [], [], 0.05)
-        except (KeyboardInterrupt, SystemExit):
-            proc.terminate()
-            raise
-
-        if ready:
-            try:
-                data = os.read(master_fd, 4096).decode("utf-8", errors="replace")
-            except OSError:
-                break
-            sys.stdout.write(data)
+            event = json.loads(raw)
+        except json.JSONDecodeError:
+            sys.stdout.write(raw + "\n")
             sys.stdout.flush()
-            buf += data
-            if SENTINEL in buf:
-                done = True
-        elif proc.poll() is not None:
-            break
+            continue
 
-    os.close(master_fd)
+        etype = event.get("type")
+
+        if etype == "assistant":
+            for block in event.get("message", {}).get("content", []):
+                if block.get("type") == "text":
+                    text = block["text"]
+                    sys.stdout.write(text)
+                    sys.stdout.flush()
+                    accumulated += text
+                    if SENTINEL in accumulated:
+                        done = True
+
+        elif etype == "result":
+            result_text = event.get("result", "")
+            if result_text and result_text not in accumulated:
+                sys.stdout.write(result_text)
+                sys.stdout.flush()
+                accumulated += result_text
+                if SENTINEL in accumulated:
+                    done = True
+
     proc.wait()
     return proc.returncode, done
 
