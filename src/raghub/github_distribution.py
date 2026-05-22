@@ -81,8 +81,7 @@ def push_to_github(
     """Push version databases to GitHub Releases."""
     if not _get_github_token():
         click.echo(
-            "Error: No GitHub authentication found.\n"
-            "  Set GITHUB_TOKEN env var or ensure 'gh auth login' has been run.",
+            "Error: No GitHub authentication. Set GITHUB_TOKEN or run 'gh auth login'.",
             err=True,
         )
         sys.exit(1)
@@ -148,8 +147,7 @@ def list_databases(repo_url: str) -> None:
     """List available databases on GitHub Releases."""
     if not _get_github_token():
         click.echo(
-            "Error: No GitHub authentication found.\n"
-            "  Set GITHUB_TOKEN env var or ensure 'gh auth login' has been run.",
+            "Error: No GitHub authentication. Set GITHUB_TOKEN or run 'gh auth login'.",
             err=True,
         )
         sys.exit(1)
@@ -192,8 +190,7 @@ def download_database(
     """Download version database from GitHub Releases."""
     if not _get_github_token():
         click.echo(
-            "Error: No GitHub authentication found.\n"
-            "  Set GITHUB_TOKEN env var or ensure 'gh auth login' has been run.",
+            "Error: No GitHub authentication. Set GITHUB_TOKEN or run 'gh auth login'.",
             err=True,
         )
         sys.exit(1)
@@ -267,9 +264,7 @@ def download_database(
             actual_sha256 = _compute_sha256(fpath)
             if actual_sha256 != expected_sha256:
                 click.echo(
-                    f"Checksum mismatch for {fname}:\n"
-                    f"  Expected: {expected_sha256}\n"
-                    f"  Actual: {actual_sha256}",
+                    f"Checksum mismatch for {fname}: expected {expected_sha256[:12]}... got {actual_sha256[:12]}...",
                     err=True,
                 )
                 sys.exit(1)

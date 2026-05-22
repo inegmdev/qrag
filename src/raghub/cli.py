@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging as _logging
 import sys
 from pathlib import Path
 
@@ -17,6 +18,18 @@ from .config import (
     set_repo_url,
     CACHE_DIR,
 )
+
+_logger = _logging.getLogger("raghub")
+
+
+class _JsonFormatter(_logging.Formatter):
+    def format(self, record: _logging.LogRecord) -> str:
+        return json.dumps({
+            "level": record.levelname,
+            "logger": record.name,
+            "msg": record.getMessage(),
+        })
+
 
 WIKIRAG_SKILL_CONTENT = """Search the local RAG database iteratively to answer a question about code or documentation.
 
@@ -51,8 +64,17 @@ Given: $ARGUMENTS (your question or topic)
 
 @click.group()
 @click.version_option(__version__)
-def cli():
+@click.option("--verbose", is_flag=True, help="Emit structured JSON logs to stderr")
+@click.pass_context
+def cli(ctx, verbose: bool):
     """raghub: build semantic RAG databases from your code and docs."""
+    ctx.ensure_object(dict)
+    ctx.obj["verbose"] = verbose
+    if verbose:
+        handler = _logging.StreamHandler(sys.stderr)
+        handler.setFormatter(_JsonFormatter())
+        _logger.addHandler(handler)
+        _logger.setLevel(_logging.DEBUG)
 
 
 # ---------------------------------------------------------------------------
@@ -398,6 +420,8 @@ def prepare(input_dirs: tuple[Path, ...], output: str):
         click.echo("No .c/.h or .pdf/.html files found in any input directory.", err=True)
         sys.exit(1)
 
+    _logger.info("prepare: %d code file(s), %d doc file(s)", len(all_code_files), len(all_doc_files))
+
     # ── Code indexing ──────────────────────────────────────────────────────
     if all_code_files:
         from .chunker import chunk_c_file
@@ -437,6 +461,7 @@ def prepare(input_dirs: tuple[Path, ...], output: str):
                     )
                 code_stored += len(batch)
         click.echo(f"  {code_stored} code chunks → {db_path}")
+        _logger.info("prepare: stored %d code chunks in %s", code_stored, db_path)
 
     # ── Docs indexing ──────────────────────────────────────────────────────
     if all_doc_files:
@@ -483,6 +508,7 @@ def prepare(input_dirs: tuple[Path, ...], output: str):
                     )
                 docs_stored += len(batch)
         click.echo(f"  {docs_stored} doc sections → {ddb_path}")
+        _logger.info("prepare: stored %d doc sections in %s", docs_stored, ddb_path)
 
     version_cfg = {"embedding_model": "all-MiniLM-L6-v2"}
     with open(out_dir / "config.json", "w") as f:
@@ -514,8 +540,10 @@ def search_code(query: str, top_k: int):
         click.echo(f"code.db not found at {db}. Run `raghub prepare` first.", err=True)
         sys.exit(1)
 
+    _logger.debug("search-code: query=%r top_k=%d db=%s", query, top_k, db)
     q_emb = embed_one(query)
     results = db_search(db, q_emb, top_k=top_k)
+    _logger.info("search-code: %d result(s) for query=%r", len(results), query)
 
     if not results:
         click.echo("No results found.")
@@ -549,8 +577,10 @@ def search_docs_cmd(query: str, top_k: int):
         click.echo(f"docs.db not found at {db}. Run `raghub prepare -i <docs_dir>` first.", err=True)
         sys.exit(1)
 
+    _logger.debug("search-docs: query=%r top_k=%d db=%s", query, top_k, db)
     q_emb = embed_one(query)
     results = db_search(db, q_emb, top_k=top_k)
+    _logger.info("search-docs: %d result(s) for query=%r", len(results), query)
 
     if not results:
         click.echo("No results found.")

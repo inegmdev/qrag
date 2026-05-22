@@ -18,6 +18,12 @@ dependencies = [
     "beautifulsoup4>=4.12",
 ]
 
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "pytest-cov>=5",
+]
+
 [project.scripts]
 raghub = "raghub.cli:cli"
 rhub = "raghub.cli:cli"
@@ -25,3 +31,9 @@ raghub-mcp-server = "raghub.mcp_server:run"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "integration: marks tests that require real sentence-transformers embeddings (slow)",
+]

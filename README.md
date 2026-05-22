@@ -218,6 +218,33 @@ PYTHONPATH=src raghub push v1.0
 
 ---
 
+## CLI Reference
+
+```
+raghub [--verbose] [--version] COMMAND [OPTIONS]
+```
+
+| Command | Description |
+|---------|-------------|
+| `prepare -i DIR -o NAME` | Parse, embed, and store code/docs into a named database |
+| `push VERSION [--repo github\|jforge] [--force]` | Push a local database to a repository |
+| `download VERSION` | Download a database from the configured repository |
+| `list-databases [--repo github\|jforge]` | List available databases on a repository |
+| `delete VERSION` | Delete a local version database |
+| `install [--ai gemini\|claude]` | Install the MCP server for your AI agent(s); auto-detects if `--ai` is omitted |
+| `mcp active [VERSION]` | Show or set the active version |
+| `mcp status` | Show active version and database file paths |
+| `mcp info` | Print the active version's config.json |
+| `mcp install [--ai gemini\|claude] [--global]` | Install MCP server via agent CLI or directly into global config |
+| `search-code QUERY [--top-k N]` | Semantic search over indexed code chunks (debug) |
+| `search-docs QUERY [--top-k N]` | Semantic search over indexed documentation (debug) |
+| `get-symbol NAME` | Print the full source of a symbol by exact name |
+| `skills install [--ai gemini\|claude] [--global]` | Install the `/wikirag` workflow skill |
+
+Global flags: `--verbose` emits structured JSON logs to stderr.
+
+---
+
 ## Troubleshooting
 
 **Q: "No active version set"**
