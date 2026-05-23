@@ -43,6 +43,13 @@ def init_code_db(db_path: Path) -> None:
             chunk_id INTEGER,
             embedding float[{EMBEDDING_DIM}] distance_metric=cosine
         );
+        CREATE TABLE IF NOT EXISTS file_manifest (
+            rel_path   TEXT NOT NULL,
+            input_root TEXT NOT NULL,
+            mtime      REAL NOT NULL,
+            sha256     TEXT NOT NULL,
+            PRIMARY KEY (rel_path, input_root)
+        );
     """)
     db.commit()
     db.close()
@@ -168,7 +175,48 @@ def init_docs_db(db_path: Path) -> None:
             section_id INTEGER,
             embedding float[{EMBEDDING_DIM}] distance_metric=cosine
         );
+        CREATE TABLE IF NOT EXISTS file_manifest (
+            rel_path   TEXT NOT NULL,
+            input_root TEXT NOT NULL,
+            mtime      REAL NOT NULL,
+            sha256     TEXT NOT NULL,
+            PRIMARY KEY (rel_path, input_root)
+        );
     """)
+    db.commit()
+    db.close()
+
+
+def load_manifest(db_path: Path) -> dict[tuple[str, str], tuple[float, str]]:
+    """Return {(input_root, rel_path): (mtime, sha256)} for all rows in file_manifest."""
+    if not db_path.exists():
+        return {}
+    db = _open(db_path)
+    rows = db.execute(
+        "SELECT input_root, rel_path, mtime, sha256 FROM file_manifest"
+    ).fetchall()
+    db.close()
+    return {(r["input_root"], r["rel_path"]): (r["mtime"], r["sha256"]) for r in rows}
+
+
+def upsert_manifest_row(
+    db_path: Path, rel_path: str, input_root: str, mtime: float, sha256: str
+) -> None:
+    db = _open(db_path)
+    db.execute(
+        "INSERT OR REPLACE INTO file_manifest (rel_path, input_root, mtime, sha256) VALUES (?,?,?,?)",
+        (rel_path, input_root, mtime, sha256),
+    )
+    db.commit()
+    db.close()
+
+
+def delete_manifest_row(db_path: Path, rel_path: str, input_root: str) -> None:
+    db = _open(db_path)
+    db.execute(
+        "DELETE FROM file_manifest WHERE rel_path = ? AND input_root = ?",
+        (rel_path, input_root),
+    )
     db.commit()
     db.close()
 

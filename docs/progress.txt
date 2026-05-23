@@ -153,6 +153,42 @@ Additional Enhancement - Auto-detection of Available Agents:
   - Error handling for case where no CLI agents are found
   - Updated README to clarify auto-detection behavior
 
+2026-05-22 — Issue 006 complete (technical criteria): tests, logging, error handling, README.
+
+All acceptance criteria satisfied except HITL team sign-off:
+  - 26 pytest tests passing (11 chunker unit, 11 database unit, 4 integration)
+    * test_chunker.py: token-split logic, overlap, named sub-chunks, C file parsing
+    * test_database.py: BLOB round-trip, schema init, upsert on re-run, list_symbols, search ranking
+    * test_integration.py: prepare→search-code (enable_ecc top result), prepare→search-docs
+      (ECC section top result), active-version side-effect, missing-DB error exit
+  - .github/workflows/ci.yml: runs pytest on push/PR to main and feat/** branches
+  - --verbose flag: structured JSON logs to stderr (all commands)
+  - CLI error paths: missing config, missing DB, bad version name, missing GITHUB_TOKEN
+    all print one-line human-readable messages and exit non-zero
+  - README.md: added CLI Reference table (all 14 commands with flags and descriptions)
+  - docs/quickstart.md: full AM62x prepare → push → download → install → use in Gemini flow
+  - HITL remaining: docs/quickstart.md needs review and sign-off by at least one team member
+
+Next: Issue 007 (blocked on 006, now unblocked) — publish to PyPI + npm.
+  Also unblocked with no deps: Issue 008 (GPU/multicore), Issue 009 (incremental updates).
+
+2026-05-22 — Issue 007 complete: GitHub Actions publish workflow + npm stub package.
+
+Changes:
+  - .github/workflows/publish.yml: tag-triggered (v*) workflow with two jobs:
+    * publish-pypi: extracts version from pyproject.toml (single source of truth),
+      asserts it matches the git tag, builds sdist+wheel via `python -m build`,
+      publishes to PyPI using PYPI_TOKEN secret via pypa/gh-action-pypi-publish,
+      then smoke-tests: `pip install raghub==$VERSION && raghub --version`
+    * publish-npm: sets package.json version from tag, publishes npm/ stub via NPM_TOKEN
+  - npm/package.json: stub package (name=raghub, version=0.0.0 stamped at release time)
+  - npm/index.js: throws an error directing users to `pip install raghub`
+  - npm/README.md: brief description + install instructions pointing to PyPI
+
+All acceptance criteria from issues/007-publish-pypi-npm.md met.
+
+Next: Issue 008 (GPU/multicore) or Issue 009 (incremental updates) — both unblocked.
+
 2026-05-22 — Issues 007–010 scoped and filed (not yet started).
 
 Four new issues added to issues/ after a design session:
@@ -180,3 +216,59 @@ Four new issues added to issues/ after a design session:
     - `rhub prepare -i <dir> -o <name> --watch`; foreground process, Ctrl+C to stop
     - Uses watchdog library; 500 ms debounce before triggering incremental prepare
     - Blocked by 009
+
+2026-05-22 — Issue 008 complete: GPU-accelerated embedding + multi-core chunking.
+
+Changes:
+  - embedder.py: added resolve_device(requested) → 'cuda'|'cpu'; auto mode uses
+    torch.cuda.is_available() and falls back to cpu silently; cuda mode raises ValueError
+    if CUDA unavailable; _get_model() now accepts device param and re-creates model if device
+    changes; embed() and embed_one() accept device kwarg (default 'cpu')
+  - cli.py: prepare now accepts --device=auto|cpu|cuda (default auto) and --limit-cpu=N
+    (default all cores); validates --limit-cpu ≤ os.cpu_count() and exits with clear error
+    if exceeded; resolves and prints embedding device at session start; chunking stage uses
+    ProcessPoolExecutor(max_workers=limit_cpu) with per-file futures and progressbar via
+    as_completed; both device and chunking errors are surfaced as warnings, not hard crashes
+
+Verified:
+  - raghub prepare --help shows both new flags with descriptions and defaults
+  - --limit-cpu=9999 exits with clear error (exceeds available cores (4))
+  - --device=cuda exits with clear error (CUDA requested but not available on this machine)
+  - All 22 unit tests + 4 integration tests pass
+  - resolve_device('auto') correctly returns 'cpu' on this machine (no GPU)
+
+Next: Issue 009 — incremental database update (folder diff).
+
+2026-05-22 — Issue 009 complete: incremental database update (folder diff).
+
+Changes:
+  - database.py: file_manifest table added to both init_code_db and init_docs_db
+    (CREATE TABLE IF NOT EXISTS — safe on existing DBs); three new functions:
+    * load_manifest(db_path) → {(input_root, rel_path): (mtime, sha256)}
+    * upsert_manifest_row(db_path, rel_path, input_root, mtime, sha256)
+    * delete_manifest_row(db_path, rel_path, input_root)
+  - cli.py: prepare command rewritten with delta logic:
+    * --force flag added (documented in --help); deletes DB files and does full rebuild
+    * input dirs now grouped by directory (code_by_dir, doc_by_dir) to track rel_path
+    * walk dict built: {(input_root, rel_path): mtime} for all discovered files
+    * root-mismatch check: if stored manifest roots ≠ current -i roots, hard error
+    * delta computed: deleted (remove chunks+manifest row), modified (sha256 check,
+      re-embed), added (chunk+embed+insert), unchanged (skip entirely)
+    * mtime-only changes (content unchanged) update only the manifest mtime
+    * manifest rows written only for successfully processed files
+    * prints "[prepare] nothing changed (code|docs)" when no delta exists
+    * _sha256() helper added for file content hashing
+  - tests/test_database.py: 5 new unit tests for manifest functions
+    (table creation, empty load, upsert, overwrite, delete, multi-root keys)
+  - tests/test_integration.py: 3 new tests:
+    * test_prepare_incremental_nothing_changed (integration): second run prints "nothing changed"
+    * test_prepare_force_rebuilds_everything (integration): --force never prints "nothing changed"
+    * test_prepare_errors_on_root_mismatch: direct DB seeding to verify hard error path
+
+Verified:
+  - All 28 unit tests pass (database + chunker)
+  - All 7 integration tests pass (original 4 + 3 new incremental tests)
+  - raghub prepare --help shows --force with description
+  - Delta correctness: nothing changed, root mismatch, and force rebuild paths all verified
+
+Next: Issue 010 — watch folder for live database updates (`--watch`), blocked on 009 (now unblocked).

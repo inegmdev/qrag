@@ -1,0 +1,17 @@
+{
+  "name": "raghub",
+  "version": "0.0.0",
+  "description": "Semantic RAG databases for code and docs — one index, instant search for every AI agent",
+  "keywords": ["rag", "embeddings", "code-search", "mcp", "llm", "semantic-search"],
+  "homepage": "https://github.com/islamegm/raghub",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/islamegm/raghub.git"
+  },
+  "bugs": {
+    "url": "https://github.com/islamegm/raghub/issues"
+  },
+  "license": "MIT",
+  "main": "index.js",
+  "files": ["index.js", "README.md"]
+}
