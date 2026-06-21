@@ -16,6 +16,12 @@ Build semantic RAG databases from your code and docs — once per team, instant 
 pip install git+https://github.com/inegmdev/qrag.git@main
 ```
 
+If you get a `setuptools` error (e.g. in corporate/offline environments), add `--no-build-isolation`:
+
+```bash
+pip install --no-build-isolation git+https://github.com/inegmdev/qrag.git@main
+```
+
 **From PyPI (once published):**
 
 ```bash
