@@ -1,4 +1,4 @@
-"""MCP server for raghub.
+"""MCP server for qrag.
 
 Implements the Model Context Protocol over JSON-RPC / stdio.
 """
@@ -17,7 +17,7 @@ def _ensure_active_version() -> tuple[Path, Path]:
     cfg = load_global()
     active = cfg.get("active_version")
     if not active:
-        raise RuntimeError("No active version set. Run `raghub mcp active <version>` first.")
+        raise RuntimeError("No active version set. Run `qrag mcp active <version>` first.")
 
     code_db = CACHE_DIR / active / "code.db"
     docs_db = CACHE_DIR / active / "docs.db"
@@ -86,7 +86,7 @@ def list_symbols_impl(pattern: str = "", limit: int = 200) -> list[dict]:
 # Tool definitions for MCP
 TOOLS = {
     "search_code": {
-        "description": "Search indexed source code (C/H files) by meaning. Use when asked about driver implementations, API usage, how something works in code, or any question about SDK functions and structures.",
+        "description": "Search indexed source code (C/C++ files) by meaning. Use when asked about implementations, API usage, how something works in code, or any question about functions and structures.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -155,7 +155,7 @@ def handle_request(request: dict) -> dict:
                 "protocolVersion": "2024-11-05",
                 "capabilities": {"tools": {}},
                 "serverInfo": {
-                    "name": "raghub",
+                    "name": "qrag",
                     "version": "0.1.0",
                 },
             },

@@ -9,13 +9,13 @@ def pytest_configure(config):
 
 
 @pytest.fixture
-def isolated_raghub(tmp_path, monkeypatch):
-    """Redirect raghub cache/config to tmp_path for full test isolation."""
-    cache = tmp_path / ".raghub"
+def isolated_qrag(tmp_path, monkeypatch):
+    """Redirect qrag cache/config to tmp_path for full test isolation."""
+    cache = tmp_path / ".qrag"
     cache.mkdir(parents=True, exist_ok=True)
-    import raghub.config
-    import raghub.cli
-    monkeypatch.setattr(raghub.config, "CACHE_DIR", cache)
-    monkeypatch.setattr(raghub.config, "GLOBAL_CONFIG", cache / "config.json")
-    monkeypatch.setattr(raghub.cli, "CACHE_DIR", cache)
+    import qrag.config
+    import qrag.cli
+    monkeypatch.setattr(qrag.config, "CACHE_DIR", cache)
+    monkeypatch.setattr(qrag.config, "GLOBAL_CONFIG", cache / "config.json")
+    monkeypatch.setattr(qrag.cli, "CACHE_DIR", cache)
     return cache

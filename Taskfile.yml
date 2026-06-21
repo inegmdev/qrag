@@ -6,7 +6,7 @@ tasks:
     cmd: task --list
 
   install:
-    desc: Install raghub in editable mode
+    desc: Install qrag in editable mode
     cmd: pip install -e .
 
   test:

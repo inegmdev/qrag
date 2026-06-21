@@ -5,10 +5,13 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import tree_sitter_c as tsc
+import tree_sitter_cpp as tscpp
 from tree_sitter import Language, Parser
 
 C_LANGUAGE = Language(tsc.language())
-_parser = Parser(C_LANGUAGE)
+CPP_LANGUAGE = Language(tscpp.language())
+_c_parser = Parser(C_LANGUAGE)
+_cpp_parser = Parser(CPP_LANGUAGE)
 
 MAX_TOKENS = 512
 OVERLAP_TOKENS = 64
@@ -87,8 +90,8 @@ def _get_func_name(node) -> str | None:
     return None
 
 
-def _extract_chunks(source: bytes, file_path: str) -> list[CodeChunk]:
-    tree = _parser.parse(source)
+def _extract_chunks(source: bytes, file_path: str, parser: Parser) -> list[CodeChunk]:
+    tree = parser.parse(source)
     lines = source.decode(errors="replace").splitlines()
     chunks: list[CodeChunk] = []
 
@@ -182,6 +185,7 @@ def _extract_chunks(source: bytes, file_path: str) -> list[CodeChunk]:
     return chunks
 
 
-def chunk_c_file(path: Path) -> list[CodeChunk]:
+def chunk_code_file(path: Path) -> list[CodeChunk]:
     source = path.read_bytes()
-    return _extract_chunks(source, str(path))
+    parser = _cpp_parser if path.suffix.lower() == ".cpp" else _c_parser
+    return _extract_chunks(source, str(path), parser)

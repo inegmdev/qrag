@@ -1,30 +1,30 @@
-# raghub
+# qrag
 
-> This npm package is a name reservation stub. **raghub is a Python tool.**
+> This npm package is a name reservation stub. **qrag is a Python tool.**
 
 ## Install
 
 ```bash
-pip install raghub
+pip install qrag
 ```
 
 ## Links
 
-- **PyPI:** https://pypi.org/project/raghub
-- **Source / docs:** https://github.com/islamegm/raghub
+- **PyPI:** https://pypi.org/project/qrag
+- **Source / docs:** https://github.com/inegmdev/qrag
 
-## What is raghub?
+## What is qrag?
 
-`raghub` builds semantic RAG databases from your code and documentation — once per team, instant for every AI agent. It indexes vendor SDKs (C/C++) and technical docs (TRMs, datasheets) with local embeddings, then serves them as an MCP server to LLM agents (Gemini CLI, Claude).
+`qrag` builds semantic RAG databases from your code and documentation — once per team, instant for every AI agent. It scans input directories, auto-detects code (C/C++) and docs (PDF/HTML), indexes them with local embeddings, and serves them as an MCP server to LLM agents (Gemini CLI, Claude).
 
 ```bash
-# Prepare once
-raghub prepare --soc AM62x --sdk /path/to/ti-rtos --docs /path/to/docs --output v1.0-am62x
+# Index one or more directories — auto-detects code vs docs
+qrag prepare -i /path/to/source -i /path/to/docs -o my-project
 
 # Install MCP server for your AI agent
-raghub mcp install --global
+qrag install
 
 # Search from your AI agent
-search_code("enable ECC on SRAM")
-search_trm("ECC configuration registers")
+search_code("memory allocation")
+search_docs("configuration guide")
 ```

@@ -1,4 +1,4 @@
-# raghub
+# qrag
 
 Build semantic RAG databases from your code and docs — once per team, instant for every AI agent.
 
@@ -6,19 +6,19 @@ Build semantic RAG databases from your code and docs — once per team, instant 
 
 ---
 
-## Getting Started (Using raghub)
+## Getting Started (Using qrag)
 
 ### Installation
 
 ```bash
-pip install raghub
+pip install qrag
 ```
 
 Or install from source:
 
 ```bash
-git clone https://github.com/your-org/raghub.git
-cd raghub
+git clone https://github.com/inegmdev/qrag.git
+cd qrag
 pip install -e .
 ```
 
@@ -28,16 +28,16 @@ pip install -e .
 
 ```bash
 # List available databases
-raghub list-databases
+qrag list-databases
 
 # Download a version
-raghub download my-project
+qrag download my-project
 ```
 
 #### 2. Set as Active Version
 
 ```bash
-raghub mcp active my-project
+qrag mcp active my-project
 ```
 
 #### 3. Install for Your AI Agent
@@ -45,21 +45,14 @@ raghub mcp active my-project
 **Auto-detect and install for all available agents (recommended):**
 
 ```bash
-raghub install
+qrag install
 ```
 
 **Install for a specific agent:**
 
 ```bash
-raghub install --ai=gemini
-raghub install --ai=claude
-```
-
-You can also use the short alias `rhub` for any command:
-
-```bash
-rhub install
-rhub prepare -i /path/to/docs -o my-project
+qrag install --ai=gemini
+qrag install --ai=claude
 ```
 
 #### 4. Use in Your AI Agent
@@ -71,33 +64,27 @@ Once installed, your Gemini or Claude CLI will have access to four MCP tools:
 - **`get_symbol_definition(symbol)`** — Get the exact definition of a function, struct, or macro
 - **`list_symbols(pattern="")`** — List all symbols, optionally filtered by pattern
 
-**Example:** Ask your agent:
-
-> "How is ECC enabled in SRAM? Show me the code and relevant doc section."
-
-The agent will call the MCP tools, retrieve code + docs, and synthesize an answer.
-
 #### 5. Check Status
 
 ```bash
-raghub mcp status
-raghub mcp info
+qrag mcp status
+qrag mcp info
 ```
 
 ### Advanced: Prepare Your Own Database
 
 ```bash
 # Index code only
-raghub prepare -i /path/to/sdk -o my-project
+qrag prepare -i /path/to/source -o my-project
 
 # Index docs only
-raghub prepare -i /path/to/docs -o my-project
+qrag prepare -i /path/to/docs -o my-project
 
-# Index both (separate dirs)
-raghub prepare -i /path/to/sdk -i /path/to/docs -o my-project
+# Index both (separate dirs, or combine in one)
+qrag prepare -i /path/to/source -i /path/to/docs -o my-project
 ```
 
-Each `-i` directory is scanned automatically: `.c`/`.h` files go into `code.db`, `.pdf`/`.html`/`.htm` files go into `docs.db`. A directory containing both types will feed both databases.
+Each `-i` directory is scanned automatically: `.c`/`.h`/`.cpp` files go into `code.db`, `.pdf`/`.html`/`.htm` files go into `docs.db`. A directory containing both types will feed both databases.
 
 This will:
 
@@ -111,7 +98,7 @@ This will:
 Push to GitHub for team distribution:
 
 ```bash
-raghub push my-project
+qrag push my-project
 ```
 
 ---
@@ -127,8 +114,8 @@ raghub push my-project
 ### Clone & Setup
 
 ```bash
-git clone https://github.com/your-org/raghub.git
-cd raghub
+git clone https://github.com/inegmdev/qrag.git
+cd qrag
 
 python3 -m venv venv
 source venv/bin/activate
@@ -139,18 +126,17 @@ pip install -e ".[dev]"
 ### Project Structure
 
 ```
-raghub/
-├── src/raghub/
+qrag/
+├── src/qrag/
 │   ├── __init__.py
 │   ├── cli.py              # Click CLI commands
 │   ├── mcp_server.py       # JSON-RPC MCP server
 │   ├── embedder.py         # Sentence-Transformers wrapper
 │   ├── database.py         # SQLite + vector search operations
-│   ├── chunker.py          # Tree-sitter C code parsing + chunking
+│   ├── chunker.py          # Tree-sitter C/C++ code parsing + chunking
 │   ├── doc_parser.py       # PDF/HTML parsing + chunking
 │   ├── config.py           # Config file management
-│   ├── github_distribution.py  # GitHub Releases integration
-│   └── utils.py
+│   └── github_distribution.py  # GitHub Releases integration
 ├── tests/
 │   ├── fixtures/           # Sample C code, PDFs, HTML
 │   └── test_*.py           # Unit tests
@@ -178,26 +164,26 @@ raghub/
 
 ```bash
 pytest
-pytest --cov=src/raghub tests/
+pytest --cov=src/qrag tests/
 ```
 
 #### Testing the CLI
 
 ```bash
-PYTHONPATH=src raghub --help
+PYTHONPATH=src qrag --help
 
-PYTHONPATH=src raghub prepare -i tests/fixtures -o dev
+PYTHONPATH=src qrag prepare -i tests/fixtures -o dev
 
-PYTHONPATH=src raghub search-code "error correction"
-PYTHONPATH=src raghub search-docs "configuration"
-PYTHONPATH=src raghub install
+PYTHONPATH=src qrag search-code "error correction"
+PYTHONPATH=src qrag search-docs "configuration"
+PYTHONPATH=src qrag install
 ```
 
 #### Testing the MCP Server
 
 ```bash
 echo '{"jsonrpc": "2.0", "id": 1, "method": "tools/list"}' | \
-  PYTHONPATH=src python -m raghub.mcp_server
+  PYTHONPATH=src python -m qrag.mcp_server
 ```
 
 ### Building & Distributing
@@ -210,10 +196,10 @@ python -m build
 Distribute via GitHub Releases:
 
 ```bash
-export RAGHUB_GITHUB_URL=https://github.com/your-org/raghub-databases
+export QRAG_GITHUB_URL=https://github.com/your-org/qrag-databases
 
-PYTHONPATH=src raghub prepare -i /path/to/sdk -i /path/to/docs -o v1.0
-PYTHONPATH=src raghub push v1.0
+PYTHONPATH=src qrag prepare -i /path/to/source -i /path/to/docs -o v1.0
+PYTHONPATH=src qrag push v1.0
 ```
 
 ---
@@ -221,15 +207,15 @@ PYTHONPATH=src raghub push v1.0
 ## CLI Reference
 
 ```
-raghub [--verbose] [--version] COMMAND [OPTIONS]
+qrag [--verbose] [--version] COMMAND [OPTIONS]
 ```
 
 | Command | Description |
 |---------|-------------|
 | `prepare -i DIR -o NAME` | Parse, embed, and store code/docs into a named database |
-| `push VERSION [--repo github\|jforge] [--force]` | Push a local database to a repository |
+| `push VERSION [--force]` | Push a local database to GitHub |
 | `download VERSION` | Download a database from the configured repository |
-| `list-databases [--repo github\|jforge]` | List available databases on a repository |
+| `list-databases` | List available databases on the configured repository |
 | `delete VERSION` | Delete a local version database |
 | `install [--ai gemini\|claude]` | Install the MCP server for your AI agent(s); auto-detects if `--ai` is omitted |
 | `mcp active [VERSION]` | Show or set the active version |
@@ -239,7 +225,7 @@ raghub [--verbose] [--version] COMMAND [OPTIONS]
 | `search-code QUERY [--top-k N]` | Semantic search over indexed code chunks (debug) |
 | `search-docs QUERY [--top-k N]` | Semantic search over indexed documentation (debug) |
 | `get-symbol NAME` | Print the full source of a symbol by exact name |
-| `skills install [--ai gemini\|claude] [--global]` | Install the `/wikirag` workflow skill |
+| `skills install [--ai gemini\|claude] [--global]` | Install the `/qrag` workflow skill |
 
 Global flags: `--verbose` emits structured JSON logs to stderr.
 
@@ -248,19 +234,19 @@ Global flags: `--verbose` emits structured JSON logs to stderr.
 ## Troubleshooting
 
 **Q: "No active version set"**
-A: Run `raghub mcp active <version>` to set one. Download with `raghub download` first if needed.
+A: Run `qrag mcp active <version>` to set one. Download with `qrag download` first if needed.
 
 **Q: "code.db not found"**
-A: Run `raghub prepare` to create one, or download a pre-built version.
+A: Run `qrag prepare` to create one, or download a pre-built version.
 
 **Q: MCP tools not showing in Claude/Gemini**
-A: Re-run `raghub install`, then restart the AI tool. Verify with `gemini mcp list` or `claude mcp list`.
+A: Re-run `qrag install`, then restart the AI tool. Verify with `gemini mcp list` or `claude mcp list`.
 
 **Q: MCP server shows "Disconnected"**
-A: Ensure `raghub-mcp-server` is installed (`pip install -e .`) and try `raghub install` again.
+A: Ensure `qrag-mcp-server` is installed (`pip install -e .`) and try `qrag install` again.
 
 **Q: Search returns no results**
-A: Check status with `raghub mcp status`, and ensure your query is semantically related to indexed content.
+A: Check status with `qrag mcp status`, and ensure your query is semantically related to indexed content.
 
 ---
 

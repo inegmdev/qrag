@@ -1,5 +1,5 @@
 /**
- * sample.c — Toy ECC/SRAM driver fixture for QuickRAG-TI tests.
+ * sample.c — Toy ECC/SRAM driver fixture for qrag tests.
  */
 
 #include <stdint.h>

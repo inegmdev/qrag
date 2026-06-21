@@ -1,15 +1,15 @@
 {
-  "name": "raghub",
+  "name": "qrag",
   "version": "0.0.0",
   "description": "Semantic RAG databases for code and docs — one index, instant search for every AI agent",
   "keywords": ["rag", "embeddings", "code-search", "mcp", "llm", "semantic-search"],
-  "homepage": "https://github.com/islamegm/raghub",
+  "homepage": "https://github.com/inegmdev/qrag",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/islamegm/raghub.git"
+    "url": "git+https://github.com/inegmdev/qrag.git"
   },
   "bugs": {
-    "url": "https://github.com/islamegm/raghub/issues"
+    "url": "https://github.com/inegmdev/qrag/issues"
   },
   "license": "MIT",
   "main": "index.js",

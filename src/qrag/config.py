@@ -1,8 +1,9 @@
 import json
 import os
+import shutil
 from pathlib import Path
 
-CACHE_DIR = Path.home() / ".raghub"
+CACHE_DIR = Path.home() / ".qrag"
 GLOBAL_CONFIG = CACHE_DIR / "config.json"
 
 _DEFAULTS = {
@@ -12,8 +13,18 @@ _DEFAULTS = {
     "cache_dir": str(CACHE_DIR),
 }
 
+_OLD_CACHE_DIR = Path.home() / ".raghub"
+
+
+def _migrate_if_needed() -> None:
+    """Migrate ~/.raghub to ~/.qrag on first run if old dir exists and new does not."""
+    if _OLD_CACHE_DIR.exists() and not CACHE_DIR.exists():
+        shutil.copytree(_OLD_CACHE_DIR, CACHE_DIR)
+        print(f"[qrag] Migrated existing data from {_OLD_CACHE_DIR} to {CACHE_DIR}")
+
 
 def load_global() -> dict:
+    _migrate_if_needed()
     if GLOBAL_CONFIG.exists():
         with open(GLOBAL_CONFIG) as f:
             cfg = json.load(f)
@@ -49,7 +60,7 @@ def docs_db_path() -> Path | None:
 
 
 def repo_url() -> str | None:
-    env_url = os.getenv("RAGHUB_GITHUB_URL")
+    env_url = os.getenv("QRAG_GITHUB_URL")
     if env_url:
         return env_url
     cfg = load_global()

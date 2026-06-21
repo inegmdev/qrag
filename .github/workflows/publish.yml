@@ -40,8 +40,8 @@ jobs:
       - name: Smoke test
         run: |
           sleep 60
-          pip install --no-cache-dir "raghub==${{ steps.version.outputs.version }}"
-          raghub --version
+          pip install --no-cache-dir "qrag==${{ steps.version.outputs.version }}"
+          qrag --version
 
   publish-npm:
     runs-on: ubuntu-latest

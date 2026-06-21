@@ -21,7 +21,7 @@ from .config import (
     CACHE_DIR,
 )
 
-_logger = _logging.getLogger("raghub")
+_logger = _logging.getLogger("qrag")
 
 
 class _JsonFormatter(_logging.Formatter):
@@ -33,7 +33,7 @@ class _JsonFormatter(_logging.Formatter):
         })
 
 
-WIKIRAG_SKILL_CONTENT = """Search the local RAG database iteratively to answer a question about code or documentation.
+QRAG_SKILL_CONTENT = """Search the local RAG database iteratively to answer a question about code or documentation.
 
 ## Workflow
 
@@ -52,7 +52,7 @@ Given: $ARGUMENTS (your question or topic)
 
 5. **Check in with the user** every 2–3 rounds: briefly state what you have found so far and ask if you should continue or refocus.
 
-6. **If information is not found**: Tell the user the topic is not in the local database. Suggest searching online and offer to help index new content with `raghub prepare -i <path>`.
+6. **If information is not found**: Tell the user the topic is not in the local database. Suggest searching online and offer to help index new content with `qrag prepare -i <path>`.
 
 7. **Conclude**: Synthesize all findings into a clear answer. Cite source file paths, symbol names, doc sections, and page numbers. Flag any inconsistencies between docs and code.
 
@@ -69,7 +69,7 @@ Given: $ARGUMENTS (your question or topic)
 @click.option("--verbose", is_flag=True, help="Emit structured JSON logs to stderr")
 @click.pass_context
 def cli(ctx, verbose: bool):
-    """raghub: build semantic RAG databases from your code and docs."""
+    """qrag: build semantic RAG databases from your code and docs."""
     ctx.ensure_object(dict)
     ctx.obj["verbose"] = verbose
     if verbose:
@@ -136,47 +136,47 @@ def _mcp_install(ai: str):
     import shutil
     import subprocess
 
-    mcp_cmd = shutil.which("raghub-mcp-server")
+    mcp_cmd = shutil.which("qrag-mcp-server")
     if not mcp_cmd:
-        click.echo("Error: raghub-mcp-server not found in PATH", err=True)
+        click.echo("Error: qrag-mcp-server not found in PATH", err=True)
         sys.exit(1)
 
     if ai == "gemini":
         try:
             result = subprocess.run(
-                ["gemini", "mcp", "add", "raghub", mcp_cmd],
+                ["gemini", "mcp", "add", "qrag", mcp_cmd],
                 capture_output=True,
                 text=True,
             )
             if result.returncode == 0:
-                click.echo(f"✓ Gemini MCP server 'raghub' registered")
-                click.echo(f"  Run `gemini mcp list` to verify installation")
+                click.echo("✓ Gemini MCP server 'qrag' registered")
+                click.echo("  Run `gemini mcp list` to verify installation")
             else:
-                click.echo(f"Error: Failed to register MCP server with Gemini", err=True)
+                click.echo("Error: Failed to register MCP server with Gemini", err=True)
                 click.echo(f"  {result.stderr}", err=True)
                 sys.exit(1)
         except FileNotFoundError:
-            click.echo(f"Error: Gemini CLI not found in PATH", err=True)
-            click.echo(f"  Make sure Gemini CLI is installed and in your PATH", err=True)
+            click.echo("Error: Gemini CLI not found in PATH", err=True)
+            click.echo("  Make sure Gemini CLI is installed and in your PATH", err=True)
             sys.exit(1)
 
     elif ai == "claude":
         try:
             result = subprocess.run(
-                ["claude", "mcp", "add", "raghub", mcp_cmd],
+                ["claude", "mcp", "add", "qrag", mcp_cmd],
                 capture_output=True,
                 text=True,
             )
             if result.returncode == 0:
-                click.echo(f"✓ Claude MCP server 'raghub' registered")
-                click.echo(f"  Run `claude mcp list` to verify installation")
+                click.echo("✓ Claude MCP server 'qrag' registered")
+                click.echo("  Run `claude mcp list` to verify installation")
             else:
-                click.echo(f"Error: Failed to register MCP server with Claude", err=True)
+                click.echo("Error: Failed to register MCP server with Claude", err=True)
                 click.echo(f"  {result.stderr}", err=True)
                 sys.exit(1)
         except FileNotFoundError:
-            click.echo(f"Error: Claude CLI not found in PATH", err=True)
-            click.echo(f"  Make sure Claude Code is installed and in your PATH", err=True)
+            click.echo("Error: Claude CLI not found in PATH", err=True)
+            click.echo("  Make sure Claude Code is installed and in your PATH", err=True)
             sys.exit(1)
 
 
@@ -209,7 +209,7 @@ def _mcp_install_global_config(mcp_cmd: str, agent: str) -> bool:
         if "mcpServers" not in config:
             config["mcpServers"] = {}
 
-        config["mcpServers"]["raghub"] = {
+        config["mcpServers"]["qrag"] = {
             "command": mcp_cmd,
             "args": [],
             "trust": True,
@@ -218,7 +218,7 @@ def _mcp_install_global_config(mcp_cmd: str, agent: str) -> bool:
         with open(config_file, "w") as f:
             json.dump(config, f, indent=2)
 
-        click.echo(f"✓ Gemini MCP server 'raghub' installed")
+        click.echo("✓ Gemini MCP server 'qrag' installed")
         click.echo(f"  Config: {config_file}")
         return True
 
@@ -236,7 +236,7 @@ def _mcp_install_global_config(mcp_cmd: str, agent: str) -> bool:
         if "mcpServers" not in config:
             config["mcpServers"] = {}
 
-        config["mcpServers"]["raghub"] = {
+        config["mcpServers"]["qrag"] = {
             "command": mcp_cmd,
             "args": [],
         }
@@ -244,7 +244,7 @@ def _mcp_install_global_config(mcp_cmd: str, agent: str) -> bool:
         with open(config_file, "w") as f:
             json.dump(config, f, indent=2)
 
-        click.echo(f"✓ Claude MCP server 'raghub' installed")
+        click.echo("✓ Claude MCP server 'qrag' installed")
         click.echo(f"  Config: {config_file}")
         return True
 
@@ -255,12 +255,11 @@ def _mcp_install_global():
     """Install MCP server system-wide for all available agents."""
     import shutil
 
-    mcp_cmd = shutil.which("raghub-mcp-server")
+    mcp_cmd = shutil.which("qrag-mcp-server")
     if not mcp_cmd:
-        click.echo("Error: raghub-mcp-server not found in PATH", err=True)
+        click.echo("Error: qrag-mcp-server not found in PATH", err=True)
         sys.exit(1)
 
-    # Detect available agents
     available_agents = _detect_available_agents()
     if not available_agents:
         click.echo("Error: No CLI agents found (gemini or claude)", err=True)
@@ -270,7 +269,6 @@ def _mcp_install_global():
     click.echo(f"Detected available agents: {', '.join(available_agents)}")
     click.echo()
 
-    # Install for all available agents
     installed = []
     for agent in available_agents:
         if _mcp_install_global_config(mcp_cmd, agent):
@@ -291,7 +289,7 @@ def _mcp_install_global():
 @cli.command("install")
 @click.option("--ai", type=click.Choice(["gemini", "claude"]), help="AI tool to install for (default: auto-detect all)")
 def install(ai: str | None):
-    """Install the raghub MCP server for your AI agent(s)."""
+    """Install the qrag MCP server for your AI agent(s)."""
     if ai:
         _mcp_install(ai)
     else:
@@ -299,7 +297,7 @@ def install(ai: str | None):
 
 
 # ---------------------------------------------------------------------------
-# skills install / wikirag
+# skills install / qrag skill
 # ---------------------------------------------------------------------------
 
 @cli.group("skills")
@@ -311,7 +309,7 @@ def skills():
 @click.option("--ai", type=click.Choice(["gemini", "claude"]), help="AI tool to install for")
 @click.option("--global", "global_install", is_flag=True, help="Install skills system-wide for all agents")
 def skills_install(ai: str | None, global_install: bool):
-    """Install the /wikirag workflow skill."""
+    """Install the /qrag workflow skill."""
     if global_install:
         _skills_install_global()
     else:
@@ -322,7 +320,7 @@ def skills_install(ai: str | None, global_install: bool):
 
 
 def _skills_install(ai: str, global_install: bool) -> None:
-    """Install wikirag.md skill for a specific agent."""
+    """Install qrag.md skill for a specific agent."""
     if ai == "claude":
         if global_install:
             cmd_dir = Path.home() / ".claude" / "commands"
@@ -338,17 +336,17 @@ def _skills_install(ai: str, global_install: bool) -> None:
         sys.exit(1)
 
     cmd_dir.mkdir(parents=True, exist_ok=True)
-    skill_file = cmd_dir / "wikirag.md"
+    skill_file = cmd_dir / "qrag.md"
 
     with open(skill_file, "w") as f:
-        f.write(WIKIRAG_SKILL_CONTENT)
+        f.write(QRAG_SKILL_CONTENT)
 
-    click.echo(f"✓ Installed /wikirag skill for {ai}")
+    click.echo(f"✓ Installed /qrag skill for {ai}")
     click.echo(f"  File: {skill_file}")
 
 
 def _skills_install_global() -> None:
-    """Install wikirag.md skill for all detected agents (global)."""
+    """Install qrag.md skill for all detected agents (global)."""
     available_agents = _detect_available_agents()
     if not available_agents:
         click.echo("Error: No CLI agents found (gemini or claude)", err=True)
@@ -369,9 +367,9 @@ def _skills_install_global() -> None:
     click.echo()
     if installed:
         agents_str = " and ".join(installed)
-        click.echo(f"✓ /wikirag skill is now available system-wide for {agents_str}!")
+        click.echo(f"✓ /qrag skill is now available system-wide for {agents_str}!")
     else:
-        click.echo("Warning: /wikirag skill could not be installed to any agent.", err=True)
+        click.echo("Warning: /qrag skill could not be installed to any agent.", err=True)
 
 
 # ---------------------------------------------------------------------------
@@ -389,7 +387,11 @@ def _sha256(path: Path) -> str:
 
 def _detect_input_type(d: Path) -> tuple[list[Path], list[Path]]:
     """Return (code_files, doc_files) found under d."""
-    code = sorted(d.rglob("*.c")) + sorted(d.rglob("*.h"))
+    code = (
+        sorted(d.rglob("*.c"))
+        + sorted(d.rglob("*.h"))
+        + sorted(d.rglob("*.cpp"))
+    )
     docs = (
         sorted(d.rglob("*.pdf"))
         + sorted(d.rglob("*.html"))
@@ -413,7 +415,7 @@ def _detect_input_type(d: Path) -> tuple[list[Path], list[Path]]:
 def prepare(input_dirs: tuple[Path, ...], output: str, device: str, limit_cpu: int | None, force: bool):
     """Parse, embed, and store code and/or docs into a named database.
 
-    Each -i directory is scanned automatically: .c/.h files go into code.db,
+    Each -i directory is scanned automatically: .c/.h/.cpp files go into code.db,
     .pdf/.html/.htm files go into docs.db. Pass -i multiple times to combine
     directories.
 
@@ -447,26 +449,26 @@ def prepare(input_dirs: tuple[Path, ...], output: str, device: str, limit_cpu: i
     for d in input_dirs:
         code_files, doc_files = _detect_input_type(d)
         if code_files:
-            click.echo(f"[code] {d} — {len(code_files)} .c/.h file(s)")
+            click.echo(f"[code] {d} — {len(code_files)} .c/.h/.cpp file(s)")
             code_by_dir[d] = code_files
         if doc_files:
             click.echo(f"[docs] {d} — {len(doc_files)} .pdf/.html file(s)")
             doc_by_dir[d] = doc_files
         if not code_files and not doc_files:
-            click.echo(f"[warn] {d} — no .c/.h or .pdf/.html files found, skipping")
+            click.echo(f"[warn] {d} — no .c/.h/.cpp or .pdf/.html files found, skipping")
 
     all_code_files = [f for files in code_by_dir.values() for f in files]
     all_doc_files = [f for files in doc_by_dir.values() for f in files]
 
     if not all_code_files and not all_doc_files:
-        click.echo("No .c/.h or .pdf/.html files found in any input directory.", err=True)
+        click.echo("No .c/.h/.cpp or .pdf/.html files found in any input directory.", err=True)
         sys.exit(1)
 
     _logger.info("prepare: %d code file(s), %d doc file(s)", len(all_code_files), len(all_doc_files))
 
     # ── Code indexing ──────────────────────────────────────────────────────
     if all_code_files:
-        from .chunker import chunk_c_file
+        from .chunker import chunk_code_file
         from .database import (
             delete_chunks_for_file, init_code_db, insert_code_chunk,
             load_manifest, upsert_manifest_row, delete_manifest_row,
@@ -529,7 +531,7 @@ def prepare(input_dirs: tuple[Path, ...], output: str, device: str, limit_cpu: i
             workers = limit_cpu
             with ProcessPoolExecutor(max_workers=workers) as executor:
                 futures = {
-                    executor.submit(chunk_c_file, abs_p): (root, rel)
+                    executor.submit(chunk_code_file, abs_p): (root, rel)
                     for (root, rel), abs_p in to_process.items()
                 }
                 with click.progressbar(length=len(to_process), label="  Chunking code", width=60) as bar:
@@ -709,10 +711,10 @@ def search_code(query: str, top_k: int):
 
     db = code_db_path()
     if db is None:
-        click.echo("No active version set. Run `raghub mcp active <version>`.", err=True)
+        click.echo("No active version set. Run `qrag mcp active <version>`.", err=True)
         sys.exit(1)
     if not db.exists():
-        click.echo(f"code.db not found at {db}. Run `raghub prepare` first.", err=True)
+        click.echo(f"code.db not found at {db}. Run `qrag prepare` first.", err=True)
         sys.exit(1)
 
     _logger.debug("search-code: query=%r top_k=%d db=%s", query, top_k, db)
@@ -746,10 +748,10 @@ def search_docs_cmd(query: str, top_k: int):
 
     db = docs_db_path()
     if db is None:
-        click.echo("No active version set. Run `raghub mcp active <version>`.", err=True)
+        click.echo("No active version set. Run `qrag mcp active <version>`.", err=True)
         sys.exit(1)
     if not db.exists():
-        click.echo(f"docs.db not found at {db}. Run `raghub prepare -i <docs_dir>` first.", err=True)
+        click.echo(f"docs.db not found at {db}. Run `qrag prepare -i <docs_dir>` first.", err=True)
         sys.exit(1)
 
     _logger.debug("search-docs: query=%r top_k=%d db=%s", query, top_k, db)
@@ -783,10 +785,10 @@ def get_symbol(name: str):
 
     db = code_db_path()
     if db is None:
-        click.echo("No active version set. Run `raghub mcp active <version>`.", err=True)
+        click.echo("No active version set. Run `qrag mcp active <version>`.", err=True)
         sys.exit(1)
     if not db.exists():
-        click.echo(f"code.db not found at {db}. Run `raghub prepare` first.", err=True)
+        click.echo(f"code.db not found at {db}. Run `qrag prepare` first.", err=True)
         sys.exit(1)
 
     result = db_get_symbol(db, name)
@@ -807,14 +809,9 @@ def get_symbol(name: str):
 
 @cli.command()
 @click.argument("version")
-@click.option("--repo", type=click.Choice(["github", "jforge"]), default="github", help="Repository type")
 @click.option("--force", is_flag=True, help="Overwrite existing release")
-def push(version: str, repo: str, force: bool):
-    """Push version databases to a repository."""
-    if repo == "jforge":
-        click.echo("Error: JForge support not yet implemented. Please wait for access credentials.", err=True)
-        sys.exit(1)
-
+def push(version: str, force: bool):
+    """Push version databases to GitHub."""
     url = repo_url()
     if not url:
         click.echo("Error: No repo URL configured. Set it with environment or config.", err=True)
@@ -830,13 +827,8 @@ def push(version: str, repo: str, force: bool):
 
 
 @cli.command("list-databases")
-@click.option("--repo", type=click.Choice(["github", "jforge"]), default="github", help="Repository type")
-def list_databases(repo: str):
-    """List available databases on a repository."""
-    if repo == "jforge":
-        click.echo("Error: JForge support not yet implemented. Please wait for access credentials.", err=True)
-        sys.exit(1)
-
+def list_databases():
+    """List available databases on the configured repository."""
     url = repo_url()
     if not url:
         click.echo("Error: No repo URL configured. Set it with environment or config.", err=True)
@@ -858,7 +850,6 @@ def download(version: str):
     from .github_distribution import download_database
     download_database(url, version, CACHE_DIR)
 
-    # Set as active version after successful download
     cfg = load_global()
     cfg["active_version"] = version
     save_global(cfg)

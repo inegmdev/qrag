@@ -3,29 +3,29 @@ import shutil
 from pathlib import Path
 
 import pytest
-import raghub.cli
-import raghub.config
+import qrag.cli
+import qrag.config
 from click.testing import CliRunner
 
-from raghub.cli import cli
-from raghub.database import init_code_db, upsert_manifest_row
+from qrag.cli import cli
+from qrag.database import init_code_db, upsert_manifest_row
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
 
 @pytest.fixture
-def raghub_env(tmp_path, monkeypatch):
-    """Redirect raghub cache to tmp_path."""
-    cache = tmp_path / ".raghub"
+def qrag_env(tmp_path, monkeypatch):
+    """Redirect qrag cache to tmp_path."""
+    cache = tmp_path / ".qrag"
     cache.mkdir(parents=True, exist_ok=True)
-    monkeypatch.setattr(raghub.config, "CACHE_DIR", cache)
-    monkeypatch.setattr(raghub.config, "GLOBAL_CONFIG", cache / "config.json")
-    monkeypatch.setattr(raghub.cli, "CACHE_DIR", cache)
+    monkeypatch.setattr(qrag.config, "CACHE_DIR", cache)
+    monkeypatch.setattr(qrag.config, "GLOBAL_CONFIG", cache / "config.json")
+    monkeypatch.setattr(qrag.cli, "CACHE_DIR", cache)
     return cache
 
 
 @pytest.mark.integration
-def test_prepare_and_search_code(raghub_env):
+def test_prepare_and_search_code(qrag_env):
     """prepare → search-code: enable_ecc ranks first for an ECC query."""
     runner = CliRunner()
 
@@ -38,7 +38,7 @@ def test_prepare_and_search_code(raghub_env):
 
 
 @pytest.mark.integration
-def test_prepare_and_search_docs(raghub_env):
+def test_prepare_and_search_docs(qrag_env):
     """prepare → search-docs: at least one result returned for an ECC query."""
     runner = CliRunner()
 
@@ -51,7 +51,7 @@ def test_prepare_and_search_docs(raghub_env):
 
 
 @pytest.mark.integration
-def test_prepare_sets_active_version(raghub_env):
+def test_prepare_sets_active_version(qrag_env):
     runner = CliRunner()
     result = runner.invoke(cli, ["prepare", "-i", str(FIXTURES), "-o", "my-db"])
     assert result.exit_code == 0, result.output
@@ -62,7 +62,7 @@ def test_prepare_sets_active_version(raghub_env):
 
 
 @pytest.mark.integration
-def test_search_code_error_without_db(raghub_env):
+def test_search_code_error_without_db(qrag_env):
     """search-code must exit non-zero and print a human-readable message when DB is missing."""
     runner = CliRunner()
     result = runner.invoke(cli, ["search-code", "anything"])
@@ -75,7 +75,7 @@ def test_search_code_error_without_db(raghub_env):
 
 
 @pytest.mark.integration
-def test_prepare_incremental_nothing_changed(raghub_env, tmp_path):
+def test_prepare_incremental_nothing_changed(qrag_env, tmp_path):
     """Second prepare with unchanged files prints 'nothing changed'."""
     src = tmp_path / "src"
     shutil.copytree(FIXTURES, src)
@@ -90,7 +90,7 @@ def test_prepare_incremental_nothing_changed(raghub_env, tmp_path):
 
 
 @pytest.mark.integration
-def test_prepare_force_rebuilds_everything(raghub_env, tmp_path):
+def test_prepare_force_rebuilds_everything(qrag_env, tmp_path):
     """--force causes a full rebuild even when files are unchanged."""
     src = tmp_path / "src"
     shutil.copytree(FIXTURES, src)
@@ -103,10 +103,9 @@ def test_prepare_force_rebuilds_everything(raghub_env, tmp_path):
     assert "nothing changed" not in result.output
 
 
-def test_prepare_errors_on_root_mismatch(raghub_env, tmp_path):
+def test_prepare_errors_on_root_mismatch(qrag_env, tmp_path):
     """prepare exits non-zero when -i root differs from the stored manifest."""
-    # Seed the DB with a manifest entry that uses a different root
-    db_path = raghub_env / "test" / "code.db"
+    db_path = qrag_env / "test" / "code.db"
     init_code_db(db_path)
     upsert_manifest_row(db_path, "foo.c", "/some/other/root", 0.0, "deadbeef")
 

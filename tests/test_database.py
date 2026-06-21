@@ -4,7 +4,7 @@ import sqlite3
 import pytest
 import sqlite_vec
 
-from raghub.database import (
+from qrag.database import (
     delete_chunks_for_file,
     delete_manifest_row,
     get_symbol,
@@ -15,7 +15,7 @@ from raghub.database import (
     search_code,
     upsert_manifest_row,
 )
-from raghub.embedder import EMBEDDING_DIM, from_blob, to_blob
+from qrag.embedder import EMBEDDING_DIM, from_blob, to_blob
 
 
 def _fake_embedding(val: float = 0.1) -> list[float]:

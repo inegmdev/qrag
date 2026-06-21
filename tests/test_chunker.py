@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from raghub.chunker import CodeChunk, _split_large_chunk, _token_count, chunk_c_file
+from qrag.chunker import CodeChunk, _split_large_chunk, _token_count, chunk_code_file
 
 FIXTURE_C = Path(__file__).parent / "fixtures" / "sample.c"
 
@@ -64,36 +64,36 @@ def test_split_overlap_present():
     assert last_of_first & first_of_second, "no overlap found between consecutive sub-chunks"
 
 
-def test_chunk_c_file_returns_functions():
-    chunks = chunk_c_file(FIXTURE_C)
+def test_chunk_code_file_returns_functions():
+    chunks = chunk_code_file(FIXTURE_C)
     names = {c.symbol_name for c in chunks}
     assert "enable_ecc" in names
     assert "sram_init" in names
     assert "disable_ecc" in names
 
 
-def test_chunk_c_file_returns_macros():
-    chunks = chunk_c_file(FIXTURE_C)
+def test_chunk_code_file_returns_macros():
+    chunks = chunk_code_file(FIXTURE_C)
     names = {c.symbol_name for c in chunks}
     assert "ECC_BASE_ADDR" in names
 
 
-def test_chunk_c_file_returns_structs():
-    chunks = chunk_c_file(FIXTURE_C)
+def test_chunk_code_file_returns_structs():
+    chunks = chunk_code_file(FIXTURE_C)
     struct_chunks = [c for c in chunks if c.chunk_type == "struct"]
     assert len(struct_chunks) >= 1
 
 
-def test_chunk_c_file_all_types_present():
-    chunks = chunk_c_file(FIXTURE_C)
+def test_chunk_code_file_all_types_present():
+    chunks = chunk_code_file(FIXTURE_C)
     types = {c.chunk_type for c in chunks}
     assert "function" in types
     assert "macro" in types
     assert "struct" in types
 
 
-def test_chunk_c_file_line_numbers_are_positive():
-    chunks = chunk_c_file(FIXTURE_C)
+def test_chunk_code_file_line_numbers_are_positive():
+    chunks = chunk_code_file(FIXTURE_C)
     for c in chunks:
         assert c.line_start >= 1
         assert c.line_end >= c.line_start

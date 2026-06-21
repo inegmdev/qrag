@@ -3,7 +3,7 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "raghub"
+name = "qrag"
 version = "0.1.0"
 description = "Build semantic RAG databases from your code and docs — once per team, instant for every AI agent"
 requires-python = ">=3.10"
@@ -13,6 +13,7 @@ dependencies = [
     "sqlite-vec>=0.1.6",
     "tree-sitter>=0.22,<0.26",
     "tree-sitter-c>=0.21",
+    "tree-sitter-cpp>=0.23",
     "pymupdf>=1.24",
     "html2text>=2024.2",
     "beautifulsoup4>=4.12",
@@ -25,9 +26,8 @@ dev = [
 ]
 
 [project.scripts]
-raghub = "raghub.cli:cli"
-rhub = "raghub.cli:cli"
-raghub-mcp-server = "raghub.mcp_server:run"
+qrag = "qrag.cli:cli"
+qrag-mcp-server = "qrag.mcp_server:run"
 
 [tool.setuptools.packages.find]
 where = ["src"]

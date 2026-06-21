@@ -1,67 +1,69 @@
-# raghub Quickstart: AM62x SDK + TRM
+# qrag Quickstart
 
-This walkthrough covers the full flow for an AM62x project: one team member builds the database once; the whole team queries it instantly from Gemini or Claude.
+This walkthrough covers the full flow: one team member builds the database once; the whole team queries it instantly from Gemini or Claude.
 
 ---
 
 ## Prerequisites
 
 - Python 3.10+
-- `pip install raghub`
+- `pip install qrag`
 - GitHub CLI (`gh`) authenticated: `gh auth login`
 - Gemini CLI or Claude Code installed
 
 ---
 
-## Part A — Database Preparation (one team member, once per SDK update)
+## Part A — Database Preparation (one team member, once per update)
 
 ### 1. Gather your sources
 
+Point `qrag` at any directories containing code (`.c`/`.h`/`.cpp`) and/or docs (`.pdf`/`.html`). Content type is detected automatically.
+
 ```
-/sdk/am62x/             # TI RTOS SDK — contains .c/.h driver files
-/docs/am62x/            # AM62x TRM and datasheet — .pdf and .html files
+/path/to/source/        # C/C++ source files
+/path/to/docs/          # PDF and HTML documentation
 ```
 
 ### 2. Build the index
 
 ```bash
-raghub prepare \
-  -i /sdk/am62x/ \
-  -i /docs/am62x/ \
-  -o v1.0-am62x
+qrag prepare \
+  -i /path/to/source/ \
+  -i /path/to/docs/ \
+  -o v1.0
 ```
 
-raghub scans each `-i` directory automatically:
-- `.c`/`.h` files → parsed with Tree-sitter → `code.db`
+qrag scans each `-i` directory automatically:
+- `.c`/`.h`/`.cpp` files → parsed with Tree-sitter → `code.db`
 - `.pdf`/`.html` files → section-aware parser → `docs.db`
 
 Typical output:
 
 ```
-[code] /sdk/am62x/ — 4 827 .c/.h file(s)
-[docs] /docs/am62x/ — 3 .pdf/.html file(s)
+[code] /path/to/source/ — 4 827 .c/.h/.cpp file(s)
+[docs] /path/to/docs/ — 3 .pdf/.html file(s)
   Chunking code  [################]  4 827/4 827
   Extracted 38 412 chunk(s). Embedding...
   Embedding       [################]  38 412/38 412
-  38 412 code chunks → ~/.raghub/v1.0-am62x/code.db
+  38 412 code chunks → ~/.qrag/v1.0/code.db
   Extracting docs [################]  3/3
   Extracted 214 section(s). Embedding...
-  214 doc sections → ~/.raghub/v1.0-am62x/docs.db
-Active version set to 'v1.0-am62x'.
+  214 doc sections → ~/.qrag/v1.0/docs.db
+Active version set to 'v1.0'.
 ```
 
 ### 3. Verify locally
 
 ```bash
-raghub search-code "enable ECC on SRAM"
-raghub search-docs "ECC configuration registers"
+qrag search-code "memory allocation"
+qrag search-docs "configuration guide"
 ```
 
 ### 4. Push to GitHub for team distribution
 
 ```bash
-export RAGHUB_GITHUB_URL=https://github.com/your-org/raghub-databases
-raghub push v1.0-am62x
+export QRAG_GITHUB_URL=https://github.com/your-org/qrag-databases
+qrag push v1.0
 ```
 
 ---
@@ -71,63 +73,57 @@ raghub push v1.0-am62x
 ### 1. Configure the repo URL
 
 ```bash
-export RAGHUB_GITHUB_URL=https://github.com/your-org/raghub-databases
-# Or save it permanently:
-raghub mcp active ""  # triggers config creation, then edit ~/.raghub/config.json
+export QRAG_GITHUB_URL=https://github.com/your-org/qrag-databases
 ```
 
 ### 2. Download the database
 
 ```bash
-raghub list-databases           # see what's available
-raghub download v1.0-am62x     # downloads and sets as active version
+qrag list-databases        # see what's available
+qrag download v1.0         # downloads and sets as active version
 ```
 
 ### 3. Install the MCP server
 
 ```bash
-raghub install                  # auto-detects gemini and/or claude
+qrag install               # auto-detects gemini and/or claude
 ```
 
 Verify:
 
 ```bash
-raghub mcp status
+qrag mcp status
 ```
 
 Expected output:
 
 ```
-Active version : v1.0-am62x
-code.db path   : /home/user/.raghub/v1.0-am62x/code.db
+Active version : v1.0
+code.db path   : /home/user/.qrag/v1.0/code.db
 code.db exists : True
-docs.db path   : /home/user/.raghub/v1.0-am62x/docs.db
+docs.db path   : /home/user/.qrag/v1.0/docs.db
 docs.db exists : True
 ```
 
 ### 4. Use in Gemini or Claude
 
-Start your AI agent and ask:
-
-> "How is ECC enabled on SRAM in the AM62x SDK? Show me the driver code and the relevant TRM section."
-
-The agent will call `search_code` and `search_docs` in parallel, retrieve the top-ranked results, and synthesize a complete answer with file paths and page references.
+Start your AI agent and ask natural questions about your codebase or documentation. The agent will call `search_code` and `search_docs` in parallel, retrieve the top-ranked results, and synthesize a complete answer with file paths and page references.
 
 ---
 
 ## Updating the database
 
-When the SDK or TRM is updated, the preparation team member runs:
+When source or docs are updated, run:
 
 ```bash
-raghub prepare -i /sdk/am62x/ -i /docs/am62x/ -o v1.1-am62x
-raghub push v1.1-am62x
+qrag prepare -i /path/to/source/ -i /path/to/docs/ -o v1.1
+qrag push v1.1
 ```
 
 Team members switch to the new version:
 
 ```bash
-raghub download v1.1-am62x
+qrag download v1.1
 ```
 
 ---
@@ -136,8 +132,8 @@ raghub download v1.1-am62x
 
 | Symptom | Fix |
 |---------|-----|
-| `No active version set` | Run `raghub mcp active v1.0-am62x` |
-| `code.db not found` | Run `raghub download v1.0-am62x` |
-| MCP tools not showing in Gemini/Claude | Re-run `raghub install`, restart the agent |
+| `No active version set` | Run `qrag mcp active <version>` |
+| `code.db not found` | Run `qrag download <version>` |
+| MCP tools not showing in Gemini/Claude | Re-run `qrag install`, restart the agent |
 | `No GitHub authentication` | Set `GITHUB_TOKEN` or run `gh auth login` |
-| Search returns no results | Check `raghub mcp status`; ensure query is semantically related to indexed content |
+| Search returns no results | Check `qrag mcp status`; ensure query is semantically related to indexed content |
