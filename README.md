@@ -10,11 +10,19 @@ Build semantic RAG databases from your code and docs — once per team, instant 
 
 ### Installation
 
+**From GitHub (latest, no PyPI required):**
+
+```bash
+pip install git+https://github.com/inegmdev/qrag.git@main
+```
+
+**From PyPI (once published):**
+
 ```bash
 pip install qrag
 ```
 
-Or install from source:
+**From source (for development):**
 
 ```bash
 git clone https://github.com/inegmdev/qrag.git
