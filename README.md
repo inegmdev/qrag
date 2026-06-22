@@ -233,9 +233,8 @@ qrag [--verbose] [--version] COMMAND [OPTIONS]
 | `hub delete VERSION` | Delete a local version |
 | `status` | Show active version and database file paths |
 | `info` | Show active version metadata |
-| `install [--ai gemini\|claude]` | Install the MCP server for AI agents (auto-detects) |
-| `mcp active [VERSION]` | Show or set the active version |
-| `mcp setup [--ai gemini\|claude] [--global]` | Setup MCP server config |
+| `harness active [VERSION]` | Show or set the active version |
+| `harness setup [--ai gemini\|claude] [--global] [--mcp-only]` | Install AI harness (MCP + skills) for agents |
 | `search QUERY` | Search all (code + docs + symbol); auto-detects best match |
 | `search code QUERY [--top-k N]` | Semantic search over indexed code only |
 | `search docs QUERY [--top-k N]` | Semantic search over indexed docs only |
