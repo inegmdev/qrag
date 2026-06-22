@@ -116,15 +116,15 @@ def info():
         click.echo(f"No config.json found for version '{av}'.")
 
 
-@cli.group("harness", invoke_without_command=False)
-def harness():
-    """Manage AI harness (MCP server, skills, and future interfaces)."""
+@cli.group("ai", invoke_without_command=False)
+def ai():
+    """Manage the AI harness (MCP server, skills, and future interfaces)."""
     pass
 
 
-@harness.command("active")
+@ai.command("active")
 @click.argument("version", required=False)
-def harness_active(version: str | None):
+def ai_active(version: str | None):
     """Show or set the active version."""
     cfg = load_global()
     if version is None:
@@ -139,20 +139,30 @@ def harness_active(version: str | None):
         click.echo(f"Active version set to: {version}")
 
 
-@harness.command("setup")
-@click.option("--ai", type=click.Choice(["gemini", "claude"]), help="AI tool to install for (required unless --global)")
-@click.option("--global", "global_install", is_flag=True, help="Install harness system-wide for all projects (both gemini and claude)")
+@ai.command("setup")
+@click.option("--ai", "agent", type=click.Choice(["gemini", "claude"]), help="AI tool to install for (required unless --global)")
+@click.option("--global", "global_install", is_flag=True, help="Install AI harness system-wide for all projects (both gemini and claude)")
 @click.option("--mcp-only", is_flag=True, help="Install MCP server only (skip /qrag skill)")
-def harness_setup(ai: str | None, global_install: bool, mcp_only: bool):
-    """Install AI harness (MCP server + /qrag skill)."""
-    # Install MCP server
-    if global_install:
-        _mcp_install_global()
-    else:
-        if not ai:
-            click.echo("Error: --ai=gemini|claude is required for setup (or use --global)", err=True)
-            sys.exit(1)
-        _mcp_install(ai)
+@click.option("--skills-only", is_flag=True, help="Install /qrag skill only (skip MCP server)")
+def ai_setup(agent: str | None, global_install: bool, mcp_only: bool, skills_only: bool):
+    """Install the AI harness (MCP server + /qrag skill).
+
+    Use --mcp-only or --skills-only to install just one component of the AI harness.
+    """
+    if mcp_only and skills_only:
+        click.echo("Error: --mcp-only and --skills-only are mutually exclusive.", err=True)
+        sys.exit(1)
+
+    if not global_install and not agent:
+        click.echo("Error: --ai=gemini|claude is required (or use --global)", err=True)
+        sys.exit(1)
+
+    # Install MCP server (unless --skills-only)
+    if not skills_only:
+        if global_install:
+            _mcp_install_global()
+        else:
+            _mcp_install(agent)
 
     # Install /qrag skill (unless --mcp-only)
     if not mcp_only:
@@ -160,21 +170,7 @@ def harness_setup(ai: str | None, global_install: bool, mcp_only: bool):
         if global_install:
             _skills_install_global()
         else:
-            _skills_install(ai, global_install=False)
-
-
-@harness.command("skills")
-@click.option("--ai", type=click.Choice(["gemini", "claude"]), help="AI tool to install for (required unless --global)")
-@click.option("--global", "global_install", is_flag=True, help="Install skills system-wide for all agents")
-def harness_skills(ai: str | None, global_install: bool):
-    """Install /qrag workflow skill only (without MCP server)."""
-    if global_install:
-        _skills_install_global()
-    else:
-        if not ai:
-            click.echo("Error: --ai=gemini|claude is required (or use --global)", err=True)
-            sys.exit(1)
-        _skills_install(ai, global_install=False)
+            _skills_install(agent, global_install=False)
 
 
 def _mcp_install(ai: str):

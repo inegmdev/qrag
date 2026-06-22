@@ -233,14 +233,12 @@ qrag [--verbose] [--version] COMMAND [OPTIONS]
 | `hub delete VERSION` | Delete a local version |
 | `status` | Show active version and database file paths |
 | `info` | Show active version metadata |
-| `harness active [VERSION]` | Show or set the active version |
-| `harness setup [--ai gemini\|claude] [--global] [--mcp-only]` | Install AI harness (MCP server + /qrag skill) |
-| `harness skills [--ai gemini\|claude] [--global]` | Install /qrag skill only (without MCP server) |
+| `ai active [VERSION]` | Show or set the active version |
+| `ai setup [--ai gemini\|claude] [--global] [--mcp-only] [--skills-only]` | Install AI harness (MCP server + /qrag skill) |
 | `search QUERY` | Search all (code + docs + symbol); auto-detects best match |
 | `search code QUERY [--top-k N]` | Semantic search over indexed code only |
 | `search docs QUERY [--top-k N]` | Semantic search over indexed docs only |
 | `search symbol NAME` | Look up exact symbol definition by name |
-| `skills install [--ai gemini\|claude] [--global]` | Install the `/qrag` workflow skill |
 
 Global flags: `--verbose` emits structured JSON logs to stderr.
 
