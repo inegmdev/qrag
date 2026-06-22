@@ -234,7 +234,8 @@ qrag [--verbose] [--version] COMMAND [OPTIONS]
 | `status` | Show active version and database file paths |
 | `info` | Show active version metadata |
 | `harness active [VERSION]` | Show or set the active version |
-| `harness setup [--ai gemini\|claude] [--global] [--mcp-only]` | Install AI harness (MCP + skills) for agents |
+| `harness setup [--ai gemini\|claude] [--global] [--mcp-only]` | Install AI harness (MCP server + /qrag skill) |
+| `harness skills [--ai gemini\|claude] [--global]` | Install /qrag skill only (without MCP server) |
 | `search QUERY` | Search all (code + docs + symbol); auto-detects best match |
 | `search code QUERY [--top-k N]` | Semantic search over indexed code only |
 | `search docs QUERY [--top-k N]` | Semantic search over indexed docs only |
