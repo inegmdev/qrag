@@ -808,30 +808,16 @@ def get_symbol(name: str):
 
 
 # ---------------------------------------------------------------------------
-# SHARE — Distribute indexes via GitHub
+# HUB — Share & manage indexes via GitHub
 # ---------------------------------------------------------------------------
 
-@cli.command()
-@click.argument("version")
-@click.option("--force", is_flag=True, help="Overwrite existing release")
-def push(version: str, force: bool):
-    """Push version databases to GitHub."""
-    url = repo_url()
-    if not url:
-        click.echo("Error: No repo URL configured. Set it with environment or config.", err=True)
-        sys.exit(1)
-
-    version_dir = CACHE_DIR / version
-    if not version_dir.exists():
-        click.echo(f"Version '{version}' not found in {CACHE_DIR}.", err=True)
-        sys.exit(1)
-
-    from .github_distribution import push_to_github
-    push_to_github(url, version, version_dir, force=force)
+@cli.group("hub")
+def hub():
+    """Manage and share indexes via GitHub."""
 
 
-@cli.command("list")
-def list_databases():
+@hub.command("list")
+def hub_list():
     """List available versions on the configured repository."""
     url = repo_url()
     if not url:
@@ -842,10 +828,10 @@ def list_databases():
     gh_list(url)
 
 
-@cli.command()
+@hub.command("download")
 @click.argument("version")
-def download(version: str):
-    """Download a version database from a repository."""
+def hub_download(version: str):
+    """Download a version database from the repository."""
     url = repo_url()
     if not url:
         click.echo("Error: No repo URL configured. Set it with environment or config.", err=True)
@@ -860,9 +846,28 @@ def download(version: str):
     click.echo(f"Active version set to '{version}'.")
 
 
-@cli.command()
+@hub.command("push")
 @click.argument("version")
-def delete(version: str):
+@click.option("--force", is_flag=True, help="Overwrite existing release")
+def hub_push(version: str, force: bool):
+    """Push version databases to the repository."""
+    url = repo_url()
+    if not url:
+        click.echo("Error: No repo URL configured. Set it with environment or config.", err=True)
+        sys.exit(1)
+
+    version_dir = CACHE_DIR / version
+    if not version_dir.exists():
+        click.echo(f"Version '{version}' not found in {CACHE_DIR}.", err=True)
+        sys.exit(1)
+
+    from .github_distribution import push_to_github
+    push_to_github(url, version, version_dir, force=force)
+
+
+@hub.command("delete")
+@click.argument("version")
+def hub_delete(version: str):
     """Delete a local version database."""
     version_dir = CACHE_DIR / version
     from .github_distribution import delete_database
