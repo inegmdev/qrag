@@ -80,16 +80,45 @@ def cli(ctx, verbose: bool):
 
 
 # ---------------------------------------------------------------------------
-# MCP active / status
+# SETUP & STATUS — Connect to AI agents, check active version
 # ---------------------------------------------------------------------------
 
+@cli.command("status")
+def status():
+    """Show active version and database file paths."""
+    cfg = load_global()
+    click.echo(f"Active version : {cfg.get('active_version') or '(none)'}")
+    db = code_db_path()
+    click.echo(f"code.db path   : {db or '(not set)'}")
+    click.echo(f"code.db exists : {db.exists() if db else False}")
+    docs_db = docs_db_path()
+    click.echo(f"docs.db path   : {docs_db or '(not set)'}")
+    click.echo(f"docs.db exists : {docs_db.exists() if docs_db else False}")
+
+
+@cli.command("info")
+def info():
+    """Show active version metadata."""
+    cfg = load_global()
+    av = cfg.get("active_version")
+    if not av:
+        click.echo("No active version set. Run 'qrag download <version>' first.")
+        sys.exit(1)
+    version_cfg_path = CACHE_DIR / av / "config.json"
+    if version_cfg_path.exists():
+        with open(version_cfg_path) as f:
+            click.echo(json.dumps(json.load(f), indent=2))
+    else:
+        click.echo(f"No config.json found for version '{av}'.")
+
+
 @cli.command("mcp")
-@click.argument("subcommand", type=click.Choice(["active", "status", "info", "install"]))
+@click.argument("subcommand", type=click.Choice(["active", "setup"]))
 @click.argument("version", required=False)
-@click.option("--ai", type=click.Choice(["gemini", "claude"]), help="AI tool to install for (required for install)")
+@click.option("--ai", type=click.Choice(["gemini", "claude"]), help="AI tool to install for (required for setup)")
 @click.option("--global", "global_install", is_flag=True, help="Install MCP server system-wide for all projects (both gemini and claude)")
 def mcp(subcommand: str, version: str | None, ai: str | None, global_install: bool):
-    """Manage the active MCP version."""
+    """Manage MCP server and active version selection."""
     cfg = load_global()
     if subcommand == "active":
         if version is None:
@@ -102,31 +131,12 @@ def mcp(subcommand: str, version: str | None, ai: str | None, global_install: bo
             cfg["active_version"] = version
             save_global(cfg)
             click.echo(f"Active version set to: {version}")
-    elif subcommand == "status":
-        click.echo(f"Active version : {cfg.get('active_version') or '(none)'}")
-        db = code_db_path()
-        click.echo(f"code.db path   : {db or '(not set)'}")
-        click.echo(f"code.db exists : {db.exists() if db else False}")
-        docs_db = docs_db_path()
-        click.echo(f"docs.db path   : {docs_db or '(not set)'}")
-        click.echo(f"docs.db exists : {docs_db.exists() if docs_db else False}")
-    elif subcommand == "info":
-        av = cfg.get("active_version")
-        if not av:
-            click.echo("No active version set.")
-            return
-        version_cfg_path = CACHE_DIR / av / "config.json"
-        if version_cfg_path.exists():
-            with open(version_cfg_path) as f:
-                click.echo(json.dumps(json.load(f), indent=2))
-        else:
-            click.echo(f"No config.json found for version '{av}'.")
-    elif subcommand == "install":
+    elif subcommand == "setup":
         if global_install:
             _mcp_install_global()
         else:
             if not ai:
-                click.echo("Error: --ai=gemini|claude is required for install (or use --global)", err=True)
+                click.echo("Error: --ai=gemini|claude is required for setup (or use --global)", err=True)
                 sys.exit(1)
             _mcp_install(ai)
 
@@ -289,7 +299,7 @@ def _mcp_install_global():
 @cli.command("install")
 @click.option("--ai", type=click.Choice(["gemini", "claude"]), help="AI tool to install for (default: auto-detect all)")
 def install(ai: str | None):
-    """Install the qrag MCP server for your AI agent(s)."""
+    """Install the qrag MCP server for AI agents (auto-detects Gemini/Claude)."""
     if ai:
         _mcp_install(ai)
     else:
@@ -297,7 +307,7 @@ def install(ai: str | None):
 
 
 # ---------------------------------------------------------------------------
-# skills install / qrag skill
+# SKILLS — Install /qrag workflow skill
 # ---------------------------------------------------------------------------
 
 @cli.group("skills")
@@ -373,7 +383,7 @@ def _skills_install_global() -> None:
 
 
 # ---------------------------------------------------------------------------
-# prepare
+# BUILD — Create and manage indexes
 # ---------------------------------------------------------------------------
 
 def _sha256(path: Path) -> str:
@@ -698,7 +708,7 @@ def prepare(input_dirs: tuple[Path, ...], output: str, device: str, limit_cpu: i
 
 
 # ---------------------------------------------------------------------------
-# search-code
+# SEARCH — Query indexes locally (debug/testing)
 # ---------------------------------------------------------------------------
 
 @cli.command("search-code")
@@ -734,9 +744,6 @@ def search_code(query: str, top_k: int):
         )
 
 
-# ---------------------------------------------------------------------------
-# search-docs
-# ---------------------------------------------------------------------------
 
 @cli.command("search-docs")
 @click.argument("query")
@@ -773,9 +780,6 @@ def search_docs_cmd(query: str, top_k: int):
         )
 
 
-# ---------------------------------------------------------------------------
-# get-symbol
-# ---------------------------------------------------------------------------
 
 @cli.command("get-symbol")
 @click.argument("name")
@@ -804,7 +808,7 @@ def get_symbol(name: str):
 
 
 # ---------------------------------------------------------------------------
-# GitHub distribution
+# SHARE — Distribute indexes via GitHub
 # ---------------------------------------------------------------------------
 
 @cli.command()
@@ -826,9 +830,9 @@ def push(version: str, force: bool):
     push_to_github(url, version, version_dir, force=force)
 
 
-@cli.command("list-databases")
+@cli.command("list")
 def list_databases():
-    """List available databases on the configured repository."""
+    """List available versions on the configured repository."""
     url = repo_url()
     if not url:
         click.echo("Error: No repo URL configured. Set it with environment or config.", err=True)
