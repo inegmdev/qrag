@@ -236,9 +236,10 @@ qrag [--verbose] [--version] COMMAND [OPTIONS]
 | `install [--ai gemini\|claude]` | Install the MCP server for AI agents (auto-detects) |
 | `mcp active [VERSION]` | Show or set the active version |
 | `mcp setup [--ai gemini\|claude] [--global]` | Setup MCP server config |
-| `search-code QUERY [--top-k N]` | Semantic search over indexed code (debug) |
-| `search-docs QUERY [--top-k N]` | Semantic search over indexed docs (debug) |
-| `get-symbol NAME` | Print the full source of a symbol by exact name |
+| `search QUERY` | Search all (code + docs + symbol); auto-detects best match |
+| `search code QUERY [--top-k N]` | Semantic search over indexed code only |
+| `search docs QUERY [--top-k N]` | Semantic search over indexed docs only |
+| `search symbol NAME` | Look up exact symbol definition by name |
 | `skills install [--ai gemini\|claude] [--global]` | Install the `/qrag` workflow skill |
 
 Global flags: `--verbose` emits structured JSON logs to stderr.

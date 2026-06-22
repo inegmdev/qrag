@@ -708,10 +708,77 @@ def prepare(input_dirs: tuple[Path, ...], output: str, device: str, limit_cpu: i
 
 
 # ---------------------------------------------------------------------------
-# SEARCH — Query indexes locally (debug/testing)
+# SEARCH — Query indexes locally
 # ---------------------------------------------------------------------------
 
-@cli.command("search-code")
+@cli.group("search", invoke_without_command=True)
+@click.argument("query", required=False)
+@click.option("--top-k", default=5, show_default=True, help="Number of results to return")
+@click.pass_context
+def search(ctx, query: str | None, top_k: int):
+    """Search code and/or docs. Without a subcommand, searches all three."""
+    if ctx.invoked_subcommand is not None:
+        return  # Subcommand will handle it
+
+    if query is None:
+        click.echo(ctx.get_help())
+        sys.exit(0)
+
+    # Search all three: code, docs, symbol (if exact match)
+    from .database import search_code as db_search_code, search_docs as db_search_docs, get_symbol as db_get_symbol
+    from .embedder import embed_one
+
+    found_any = False
+
+    # Try exact symbol match first
+    code_db = code_db_path()
+    if code_db and code_db.exists():
+        result = db_get_symbol(code_db, query)
+        if result is not None:
+            click.echo(f"\n[SYMBOL] {result['symbol_name']}  ({result['type']})")
+            click.echo(f"File   : {result['file_path']}:{result['line_start']}-{result['line_end']}")
+            click.echo(f"\n{result['code_text']}")
+            found_any = True
+
+    # Search code
+    if code_db and code_db.exists():
+        q_emb = embed_one(query)
+        results = db_search_code(code_db, q_emb, top_k=top_k)
+        if results:
+            if found_any:
+                click.echo("\n" + "="*70)
+            click.echo("\n[CODE]")
+            for i, r in enumerate(results, 1):
+                click.echo(
+                    f"[{i}] {r['symbol_name']}  ({r['type']})  score={r['similarity_score']}\n"
+                    f"    {r['file_path']}:{r['line_start']}-{r['line_end']}"
+                )
+            found_any = True
+
+    # Search docs
+    docs_db = docs_db_path()
+    if docs_db and docs_db.exists():
+        q_emb = embed_one(query)
+        results = db_search_docs(docs_db, q_emb, top_k=top_k)
+        if results:
+            if found_any:
+                click.echo("\n" + "="*70)
+            click.echo("\n[DOCS]")
+            for i, r in enumerate(results, 1):
+                tags = ", ".join(r["feature_tags"]) if r["feature_tags"] else ""
+                page = f"  p.{r['page_range']}" if r["page_range"] else ""
+                click.echo(
+                    f"[{i}] {r['title']}  score={r['similarity_score']}{page}\n"
+                    f"    Tags: {tags}"
+                )
+            found_any = True
+
+    if not found_any:
+        click.echo("No results found in code or docs.")
+        sys.exit(1)
+
+
+@search.command("code")
 @click.argument("query")
 @click.option("--top-k", default=5, show_default=True, help="Number of results to return")
 def search_code(query: str, top_k: int):
@@ -745,10 +812,10 @@ def search_code(query: str, top_k: int):
 
 
 
-@cli.command("search-docs")
+@search.command("docs")
 @click.argument("query")
 @click.option("--top-k", default=5, show_default=True, help="Number of results to return")
-def search_docs_cmd(query: str, top_k: int):
+def search_docs(query: str, top_k: int):
     """Semantic search over indexed documentation sections."""
     from .database import search_docs as db_search
     from .embedder import embed_one
@@ -781,10 +848,10 @@ def search_docs_cmd(query: str, top_k: int):
 
 
 
-@cli.command("get-symbol")
+@search.command("symbol")
 @click.argument("name")
-def get_symbol(name: str):
-    """Print the full source of a symbol by exact name."""
+def search_symbol(name: str):
+    """Look up exact symbol definition by name."""
     from .database import get_symbol as db_get_symbol
 
     db = code_db_path()
