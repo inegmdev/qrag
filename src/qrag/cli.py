@@ -80,7 +80,11 @@ def cli(ctx, verbose: bool):
 
 
 # ---------------------------------------------------------------------------
-# SETUP & STATUS — Connect to AI agents, check active version
+# HARNESS — AI agent integration (MCP, skills, and other interfaces)
+# ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# STATUS — Check active version and configuration
 # ---------------------------------------------------------------------------
 
 @cli.command("status")
@@ -112,33 +116,61 @@ def info():
         click.echo(f"No config.json found for version '{av}'.")
 
 
-@cli.command("mcp")
-@click.argument("subcommand", type=click.Choice(["active", "setup"]))
+@cli.group("ai", invoke_without_command=False)
+def ai():
+    """Manage the AI harness (MCP server, skills, and future interfaces)."""
+    pass
+
+
+@ai.command("active")
 @click.argument("version", required=False)
-@click.option("--ai", type=click.Choice(["gemini", "claude"]), help="AI tool to install for (required for setup)")
-@click.option("--global", "global_install", is_flag=True, help="Install MCP server system-wide for all projects (both gemini and claude)")
-def mcp(subcommand: str, version: str | None, ai: str | None, global_install: bool):
-    """Manage MCP server and active version selection."""
+def ai_active(version: str | None):
+    """Show or set the active version."""
     cfg = load_global()
-    if subcommand == "active":
-        if version is None:
-            click.echo(f"Active version: {cfg.get('active_version') or '(none)'}")
-        else:
-            target = CACHE_DIR / version
-            if not target.exists():
-                click.echo(f"Version '{version}' not found in {CACHE_DIR}. Download it first.", err=True)
-                sys.exit(1)
-            cfg["active_version"] = version
-            save_global(cfg)
-            click.echo(f"Active version set to: {version}")
-    elif subcommand == "setup":
+    if version is None:
+        click.echo(f"Active version: {cfg.get('active_version') or '(none)'}")
+    else:
+        target = CACHE_DIR / version
+        if not target.exists():
+            click.echo(f"Version '{version}' not found in {CACHE_DIR}. Download it first.", err=True)
+            sys.exit(1)
+        cfg["active_version"] = version
+        save_global(cfg)
+        click.echo(f"Active version set to: {version}")
+
+
+@ai.command("setup")
+@click.option("--ai", "agent", type=click.Choice(["gemini", "claude"]), help="AI tool to install for (required unless --global)")
+@click.option("--global", "global_install", is_flag=True, help="Install AI harness system-wide for all projects (both gemini and claude)")
+@click.option("--mcp-only", is_flag=True, help="Install MCP server only (skip /qrag skill)")
+@click.option("--skills-only", is_flag=True, help="Install /qrag skill only (skip MCP server)")
+def ai_setup(agent: str | None, global_install: bool, mcp_only: bool, skills_only: bool):
+    """Install the AI harness (MCP server + /qrag skill).
+
+    Use --mcp-only or --skills-only to install just one component of the AI harness.
+    """
+    if mcp_only and skills_only:
+        click.echo("Error: --mcp-only and --skills-only are mutually exclusive.", err=True)
+        sys.exit(1)
+
+    if not global_install and not agent:
+        click.echo("Error: --ai=gemini|claude is required (or use --global)", err=True)
+        sys.exit(1)
+
+    # Install MCP server (unless --skills-only)
+    if not skills_only:
         if global_install:
             _mcp_install_global()
         else:
-            if not ai:
-                click.echo("Error: --ai=gemini|claude is required for setup (or use --global)", err=True)
-                sys.exit(1)
-            _mcp_install(ai)
+            _mcp_install(agent)
+
+    # Install /qrag skill (unless --mcp-only)
+    if not mcp_only:
+        click.echo()
+        if global_install:
+            _skills_install_global()
+        else:
+            _skills_install(agent, global_install=False)
 
 
 def _mcp_install(ai: str):
@@ -296,37 +328,6 @@ def _mcp_install_global():
 # install (top-level shortcut: auto-installs MCP for all detected agents)
 # ---------------------------------------------------------------------------
 
-@cli.command("install")
-@click.option("--ai", type=click.Choice(["gemini", "claude"]), help="AI tool to install for (default: auto-detect all)")
-def install(ai: str | None):
-    """Install the qrag MCP server for AI agents (auto-detects Gemini/Claude)."""
-    if ai:
-        _mcp_install(ai)
-    else:
-        _mcp_install_global()
-
-
-# ---------------------------------------------------------------------------
-# SKILLS — Install /qrag workflow skill
-# ---------------------------------------------------------------------------
-
-@cli.group("skills")
-def skills():
-    """Manage agent workflow skills (slash commands)."""
-
-
-@skills.command("install")
-@click.option("--ai", type=click.Choice(["gemini", "claude"]), help="AI tool to install for")
-@click.option("--global", "global_install", is_flag=True, help="Install skills system-wide for all agents")
-def skills_install(ai: str | None, global_install: bool):
-    """Install the /qrag workflow skill."""
-    if global_install:
-        _skills_install_global()
-    else:
-        if not ai:
-            click.echo("Error: --ai=gemini|claude is required (or use --global)", err=True)
-            sys.exit(1)
-        _skills_install(ai, global_install=False)
 
 
 def _skills_install(ai: str, global_install: bool) -> None:
@@ -708,10 +709,77 @@ def prepare(input_dirs: tuple[Path, ...], output: str, device: str, limit_cpu: i
 
 
 # ---------------------------------------------------------------------------
-# SEARCH — Query indexes locally (debug/testing)
+# SEARCH — Query indexes locally
 # ---------------------------------------------------------------------------
 
-@cli.command("search-code")
+@cli.group("search", invoke_without_command=True)
+@click.argument("query", required=False)
+@click.option("--top-k", default=5, show_default=True, help="Number of results to return")
+@click.pass_context
+def search(ctx, query: str | None, top_k: int):
+    """Search code and/or docs. Without a subcommand, searches all three."""
+    if ctx.invoked_subcommand is not None:
+        return  # Subcommand will handle it
+
+    if query is None:
+        click.echo(ctx.get_help())
+        sys.exit(0)
+
+    # Search all three: code, docs, symbol (if exact match)
+    from .database import search_code as db_search_code, search_docs as db_search_docs, get_symbol as db_get_symbol
+    from .embedder import embed_one
+
+    found_any = False
+
+    # Try exact symbol match first
+    code_db = code_db_path()
+    if code_db and code_db.exists():
+        result = db_get_symbol(code_db, query)
+        if result is not None:
+            click.echo(f"\n[SYMBOL] {result['symbol_name']}  ({result['type']})")
+            click.echo(f"File   : {result['file_path']}:{result['line_start']}-{result['line_end']}")
+            click.echo(f"\n{result['code_text']}")
+            found_any = True
+
+    # Search code
+    if code_db and code_db.exists():
+        q_emb = embed_one(query)
+        results = db_search_code(code_db, q_emb, top_k=top_k)
+        if results:
+            if found_any:
+                click.echo("\n" + "="*70)
+            click.echo("\n[CODE]")
+            for i, r in enumerate(results, 1):
+                click.echo(
+                    f"[{i}] {r['symbol_name']}  ({r['type']})  score={r['similarity_score']}\n"
+                    f"    {r['file_path']}:{r['line_start']}-{r['line_end']}"
+                )
+            found_any = True
+
+    # Search docs
+    docs_db = docs_db_path()
+    if docs_db and docs_db.exists():
+        q_emb = embed_one(query)
+        results = db_search_docs(docs_db, q_emb, top_k=top_k)
+        if results:
+            if found_any:
+                click.echo("\n" + "="*70)
+            click.echo("\n[DOCS]")
+            for i, r in enumerate(results, 1):
+                tags = ", ".join(r["feature_tags"]) if r["feature_tags"] else ""
+                page = f"  p.{r['page_range']}" if r["page_range"] else ""
+                click.echo(
+                    f"[{i}] {r['title']}  score={r['similarity_score']}{page}\n"
+                    f"    Tags: {tags}"
+                )
+            found_any = True
+
+    if not found_any:
+        click.echo("No results found in code or docs.")
+        sys.exit(1)
+
+
+@search.command("code")
 @click.argument("query")
 @click.option("--top-k", default=5, show_default=True, help="Number of results to return")
 def search_code(query: str, top_k: int):
@@ -745,10 +813,10 @@ def search_code(query: str, top_k: int):
 
 
 
-@cli.command("search-docs")
+@search.command("docs")
 @click.argument("query")
 @click.option("--top-k", default=5, show_default=True, help="Number of results to return")
-def search_docs_cmd(query: str, top_k: int):
+def search_docs(query: str, top_k: int):
     """Semantic search over indexed documentation sections."""
     from .database import search_docs as db_search
     from .embedder import embed_one
@@ -781,10 +849,10 @@ def search_docs_cmd(query: str, top_k: int):
 
 
 
-@cli.command("get-symbol")
+@search.command("symbol")
 @click.argument("name")
-def get_symbol(name: str):
-    """Print the full source of a symbol by exact name."""
+def search_symbol(name: str):
+    """Look up exact symbol definition by name."""
     from .database import get_symbol as db_get_symbol
 
     db = code_db_path()
@@ -808,30 +876,16 @@ def get_symbol(name: str):
 
 
 # ---------------------------------------------------------------------------
-# SHARE — Distribute indexes via GitHub
+# HUB — Share & manage indexes via GitHub
 # ---------------------------------------------------------------------------
 
-@cli.command()
-@click.argument("version")
-@click.option("--force", is_flag=True, help="Overwrite existing release")
-def push(version: str, force: bool):
-    """Push version databases to GitHub."""
-    url = repo_url()
-    if not url:
-        click.echo("Error: No repo URL configured. Set it with environment or config.", err=True)
-        sys.exit(1)
-
-    version_dir = CACHE_DIR / version
-    if not version_dir.exists():
-        click.echo(f"Version '{version}' not found in {CACHE_DIR}.", err=True)
-        sys.exit(1)
-
-    from .github_distribution import push_to_github
-    push_to_github(url, version, version_dir, force=force)
+@cli.group("hub")
+def hub():
+    """Manage and share indexes via GitHub."""
 
 
-@cli.command("list")
-def list_databases():
+@hub.command("list")
+def hub_list():
     """List available versions on the configured repository."""
     url = repo_url()
     if not url:
@@ -842,10 +896,10 @@ def list_databases():
     gh_list(url)
 
 
-@cli.command()
+@hub.command("download")
 @click.argument("version")
-def download(version: str):
-    """Download a version database from a repository."""
+def hub_download(version: str):
+    """Download a version database from the repository."""
     url = repo_url()
     if not url:
         click.echo("Error: No repo URL configured. Set it with environment or config.", err=True)
@@ -860,9 +914,28 @@ def download(version: str):
     click.echo(f"Active version set to '{version}'.")
 
 
-@cli.command()
+@hub.command("push")
 @click.argument("version")
-def delete(version: str):
+@click.option("--force", is_flag=True, help="Overwrite existing release")
+def hub_push(version: str, force: bool):
+    """Push version databases to the repository."""
+    url = repo_url()
+    if not url:
+        click.echo("Error: No repo URL configured. Set it with environment or config.", err=True)
+        sys.exit(1)
+
+    version_dir = CACHE_DIR / version
+    if not version_dir.exists():
+        click.echo(f"Version '{version}' not found in {CACHE_DIR}.", err=True)
+        sys.exit(1)
+
+    from .github_distribution import push_to_github
+    push_to_github(url, version, version_dir, force=force)
+
+
+@hub.command("delete")
+@click.argument("version")
+def hub_delete(version: str):
     """Delete a local version database."""
     version_dir = CACHE_DIR / version
     from .github_distribution import delete_database

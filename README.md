@@ -227,19 +227,18 @@ qrag [--verbose] [--version] COMMAND [OPTIONS]
 | Command | Description |
 |---------|-------------|
 | `prepare -i DIR -o NAME` | Parse, embed, and store code/docs into a named database |
-| `push VERSION [--force]` | Push a local database to GitHub |
-| `download VERSION` | Download a database from the configured repository |
-| `list-databases` | List available databases on the configured repository |
-| `delete VERSION` | Delete a local version database |
-| `install [--ai gemini\|claude]` | Install the MCP server for your AI agent(s); auto-detects if `--ai` is omitted |
-| `mcp active [VERSION]` | Show or set the active version |
-| `mcp status` | Show active version and database file paths |
-| `mcp info` | Print the active version's config.json |
-| `mcp install [--ai gemini\|claude] [--global]` | Install MCP server via agent CLI or directly into global config |
-| `search-code QUERY [--top-k N]` | Semantic search over indexed code chunks (debug) |
-| `search-docs QUERY [--top-k N]` | Semantic search over indexed documentation (debug) |
-| `get-symbol NAME` | Print the full source of a symbol by exact name |
-| `skills install [--ai gemini\|claude] [--global]` | Install the `/qrag` workflow skill |
+| `hub list` | List available versions on the repository |
+| `hub download VERSION` | Download a version from the repository |
+| `hub push VERSION [--force]` | Push a version to the repository |
+| `hub delete VERSION` | Delete a local version |
+| `status` | Show active version and database file paths |
+| `info` | Show active version metadata |
+| `ai active [VERSION]` | Show or set the active version |
+| `ai setup [--ai gemini\|claude] [--global] [--mcp-only] [--skills-only]` | Install AI harness (MCP server + /qrag skill) |
+| `search QUERY` | Search all (code + docs + symbol); auto-detects best match |
+| `search code QUERY [--top-k N]` | Semantic search over indexed code only |
+| `search docs QUERY [--top-k N]` | Semantic search over indexed docs only |
+| `search symbol NAME` | Look up exact symbol definition by name |
 
 Global flags: `--verbose` emits structured JSON logs to stderr.
 
