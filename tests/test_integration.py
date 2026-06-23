@@ -32,7 +32,7 @@ def test_prepare_and_search_code(qrag_env):
     result = runner.invoke(cli, ["prepare", "-i", str(FIXTURES), "-o", "test"])
     assert result.exit_code == 0, result.output
 
-    result = runner.invoke(cli, ["search-code", "enable error correction on SRAM"])
+    result = runner.invoke(cli, ["search", "code", "enable error correction on SRAM"])
     assert result.exit_code == 0, result.output
     assert "enable_ecc" in result.output
 
@@ -45,7 +45,7 @@ def test_prepare_and_search_docs(qrag_env):
     result = runner.invoke(cli, ["prepare", "-i", str(FIXTURES), "-o", "test"])
     assert result.exit_code == 0, result.output
 
-    result = runner.invoke(cli, ["search-docs", "ECC SRAM configuration"])
+    result = runner.invoke(cli, ["search", "docs", "ECC SRAM configuration"])
     assert result.exit_code == 0, result.output
     assert "[1]" in result.output
 
@@ -56,7 +56,7 @@ def test_prepare_sets_active_version(qrag_env):
     result = runner.invoke(cli, ["prepare", "-i", str(FIXTURES), "-o", "my-db"])
     assert result.exit_code == 0, result.output
 
-    result = runner.invoke(cli, ["mcp", "active"])
+    result = runner.invoke(cli, ["ai", "active"])
     assert result.exit_code == 0, result.output
     assert "my-db" in result.output
 
@@ -65,7 +65,7 @@ def test_prepare_sets_active_version(qrag_env):
 def test_search_code_error_without_db(qrag_env):
     """search-code must exit non-zero and print a human-readable message when DB is missing."""
     runner = CliRunner()
-    result = runner.invoke(cli, ["search-code", "anything"])
+    result = runner.invoke(cli, ["search", "code", "anything"])
     assert result.exit_code != 0
 
 
