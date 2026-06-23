@@ -2,21 +2,23 @@
 
 Build semantic RAG databases from your code and docs — once per team, instant for every AI agent.
 
-**Key Innovation:** One team member prepares the index once; the entire team uses pre-computed embeddings + symbol tables, dramatically reducing token usage and improving code understanding quality.
+**Key idea:** One team member prepares the index once; the whole team uses pre-computed embeddings and symbol tables, dramatically reducing token usage and improving code-understanding quality.
 
 ---
 
-## Getting Started (Using qrag)
+## For End Users
 
-### Installation
+> Your team has already built a database and shared it. Follow these steps to start using it with your AI agent.
 
-**From GitHub (latest, no PyPI required):**
+### 1. Install qrag
+
+**From GitHub (recommended, no PyPI required):**
 
 ```bash
 pip install git+https://github.com/inegmdev/qrag.git@main
 ```
 
-If you get a `setuptools` error (e.g. in corporate/offline environments), add `--no-build-isolation`:
+If you get a `setuptools` error (e.g. in corporate/offline environments):
 
 ```bash
 pip install --no-build-isolation git+https://github.com/inegmdev/qrag.git@main
@@ -28,193 +30,139 @@ pip install --no-build-isolation git+https://github.com/inegmdev/qrag.git@main
 pip install qrag
 ```
 
-**From source (for development):**
+### 2. Point qrag at your team's database repository
 
 ```bash
-git clone https://github.com/inegmdev/qrag.git
-cd qrag
-pip install -e .
+export QRAG_GITHUB_URL=https://github.com/your-org/qrag-databases
 ```
 
-### Quick Start
+Add this to your shell profile (`.bashrc`, `.zshrc`, etc.) so it persists across sessions.
 
-#### 1. Download a Pre-Built Database
+### 3. Download the latest database
 
 ```bash
-# List available databases
-qrag list-databases
-
-# Download a version
-qrag download my-project
+qrag hub list          # see what versions are available
+qrag hub download v1.0 # download and set as active
 ```
 
-#### 2. Set as Active Version
+### 4. Set up your AI agent
+
+Auto-detect and install for all available agents (recommended):
 
 ```bash
-qrag mcp active my-project
+qrag ai setup
 ```
 
-#### 3. Install for Your AI Agent
-
-**Auto-detect and install for all available agents (recommended):**
+Install for a specific agent:
 
 ```bash
-qrag install
+qrag ai setup --ai=gemini
+qrag ai setup --ai=claude
 ```
 
-**Install for a specific agent:**
+Verify the setup:
 
 ```bash
-qrag install --ai=gemini
-qrag install --ai=claude
+qrag status
 ```
 
-#### 4. Use in Your AI Agent
+Expected output:
 
-Once installed, your Gemini or Claude CLI will have access to four MCP tools:
-
-- **`search_code(query)`** — Semantic search across indexed code (up to 10 results)
-- **`search_docs(query)`** — Semantic search across documentation sections (up to 10 results)
-- **`get_symbol_definition(symbol)`** — Get the exact definition of a function, struct, or macro
-- **`list_symbols(pattern="")`** — List all symbols, optionally filtered by pattern
-
-#### 5. Check Status
-
-```bash
-qrag mcp status
-qrag mcp info
+```
+Active version : v1.0
+code.db path   : /home/user/.qrag/v1.0/code.db
+code.db exists : True
+docs.db path   : /home/user/.qrag/v1.0/docs.db
+docs.db exists : True
 ```
 
-### Advanced: Prepare Your Own Database
+### 5. Use in your AI agent
+
+Restart your AI agent (Gemini CLI or Claude Code). You now have four tools available:
+
+| Tool | Description |
+|------|-------------|
+| `search_code(query)` | Semantic search across indexed code (up to 10 results) |
+| `search_docs(query)` | Semantic search across documentation sections (up to 10 results) |
+| `get_symbol_definition(symbol)` | Get the exact definition of a function, struct, or macro |
+| `list_symbols(pattern="")` | List all symbols, optionally filtered by a pattern |
+
+Ask your agent natural questions about your codebase or documentation — it will call these tools automatically.
+
+### Updating to a newer database version
+
+When your team publishes a new version:
 
 ```bash
-# Index code only
-qrag prepare -i /path/to/source -o my-project
-
-# Index docs only
-qrag prepare -i /path/to/docs -o my-project
-
-# Index both (separate dirs, or combine in one)
-qrag prepare -i /path/to/source -i /path/to/docs -o my-project
-```
-
-Each `-i` directory is scanned automatically: `.c`/`.h`/`.cpp` files go into `code.db`, `.pdf`/`.html`/`.htm` files go into `docs.db`. A directory containing both types will feed both databases.
-
-This will:
-
-1. Parse C/C++ source files using Tree-sitter
-2. Extract functions, structs, and macros
-3. Parse PDF/HTML documentation sections
-4. Generate embeddings using Sentence-Transformers
-5. Store results in SQLite databases (`code.db` + `docs.db`)
-6. Automatically set as active version
-
-Push to GitHub for team distribution:
-
-```bash
-qrag push my-project
+qrag hub list
+qrag hub download v1.1
 ```
 
 ---
 
-## Getting Started (Developing)
+## For Database Preparers
+
+> You are the team member responsible for indexing the codebase and docs and publishing the result.
 
 ### Prerequisites
 
 - Python 3.10+
-- Git
-- pip (or uv)
+- GitHub CLI (`gh`) authenticated: `gh auth login`
+- A GitHub repository to host the databases (e.g. `https://github.com/your-org/qrag-databases`)
 
-### Clone & Setup
-
-```bash
-git clone https://github.com/inegmdev/qrag.git
-cd qrag
-
-python3 -m venv venv
-source venv/bin/activate
-
-pip install -e ".[dev]"
-```
-
-### Project Structure
-
-```
-qrag/
-├── src/qrag/
-│   ├── __init__.py
-│   ├── cli.py              # Click CLI commands
-│   ├── mcp_server.py       # JSON-RPC MCP server
-│   ├── embedder.py         # Sentence-Transformers wrapper
-│   ├── database.py         # SQLite + vector search operations
-│   ├── chunker.py          # Tree-sitter C/C++ code parsing + chunking
-│   ├── doc_parser.py       # PDF/HTML parsing + chunking
-│   ├── config.py           # Config file management
-│   └── github_distribution.py  # GitHub Releases integration
-├── tests/
-│   ├── fixtures/           # Sample C code, PDFs, HTML
-│   └── test_*.py           # Unit tests
-├── pyproject.toml
-└── README.md
-```
-
-### Key Modules
-
-**`embedder.py`** — Generates embeddings using `all-MiniLM-L6-v2` (384-dim, local, free)
-
-**`chunker.py`** — Extracts code symbols using Tree-sitter; large functions auto-split into overlapping sub-chunks
-
-**`doc_parser.py`** — Parses PDFs (PyMuPDF) and HTML (BeautifulSoup) with heading hierarchy and feature tagging
-
-**`database.py`** — SQLite + sqlite-vec for vector search; `search_code()`, `search_docs()`, `get_symbol()`, `list_symbols()`
-
-**`mcp_server.py`** — JSON-RPC 2.0 MCP server over stdio; implements the 4 MCP tools
-
-**`cli.py`** — Click command group (`prepare`, `install`, `mcp`, `push`, `download`, `list-databases`, `delete`, `search-code`, `search-docs`, `get-symbol`, `skills`)
-
-### Development Workflow
-
-#### Running Tests
+### 1. Install qrag
 
 ```bash
-pytest
-pytest --cov=src/qrag tests/
+pip install git+https://github.com/inegmdev/qrag.git@main
 ```
 
-#### Testing the CLI
-
-```bash
-PYTHONPATH=src qrag --help
-
-PYTHONPATH=src qrag prepare -i tests/fixtures -o dev
-
-PYTHONPATH=src qrag search-code "error correction"
-PYTHONPATH=src qrag search-docs "configuration"
-PYTHONPATH=src qrag install
-```
-
-#### Testing the MCP Server
-
-```bash
-echo '{"jsonrpc": "2.0", "id": 1, "method": "tools/list"}' | \
-  PYTHONPATH=src python -m qrag.mcp_server
-```
-
-### Building & Distributing
-
-```bash
-pip install build
-python -m build
-```
-
-Distribute via GitHub Releases:
+### 2. Configure the distribution repository
 
 ```bash
 export QRAG_GITHUB_URL=https://github.com/your-org/qrag-databases
-
-PYTHONPATH=src qrag prepare -i /path/to/source -i /path/to/docs -o v1.0
-PYTHONPATH=src qrag push v1.0
 ```
+
+### 3. Build the index
+
+Point `qrag` at directories containing code (`.c`/`.h`/`.cpp`) and/or docs (`.pdf`/`.html`). Content type is detected automatically.
+
+```bash
+qrag prepare \
+  -i /path/to/source/ \
+  -i /path/to/docs/ \
+  -o v1.0
+```
+
+What happens under the hood:
+
+1. `.c`/`.h`/`.cpp` files are parsed with Tree-sitter; functions, structs, and macros are extracted into `code.db`
+2. `.pdf`/`.html` files are parsed section-by-section into `docs.db`
+3. Embeddings are generated locally using Sentence-Transformers (`all-MiniLM-L6-v2`)
+4. Both databases are stored at `~/.qrag/v1.0/` and the version is set as active
+
+### 4. Verify locally before pushing
+
+```bash
+qrag search code "memory allocation"
+qrag search docs "configuration guide"
+```
+
+### 5. Push to GitHub for team distribution
+
+```bash
+qrag hub push v1.0
+```
+
+### Updating the database
+
+When source or docs change, build and push a new version:
+
+```bash
+qrag prepare -i /path/to/source/ -i /path/to/docs/ -o v1.1
+qrag hub push v1.1
+```
+
+Notify your team to run `qrag hub download v1.1`.
 
 ---
 
@@ -235,7 +183,7 @@ qrag [--verbose] [--version] COMMAND [OPTIONS]
 | `info` | Show active version metadata |
 | `ai active [VERSION]` | Show or set the active version |
 | `ai setup [--ai gemini\|claude] [--global] [--mcp-only] [--skills-only]` | Install AI harness (MCP server + /qrag skill) |
-| `search QUERY` | Search all (code + docs + symbol); auto-detects best match |
+| `search QUERY` | Search all (code + docs + symbols); auto-detects best match |
 | `search code QUERY [--top-k N]` | Semantic search over indexed code only |
 | `search docs QUERY [--top-k N]` | Semantic search over indexed docs only |
 | `search symbol NAME` | Look up exact symbol definition by name |
@@ -247,29 +195,28 @@ Global flags: `--verbose` emits structured JSON logs to stderr.
 ## Troubleshooting
 
 **Q: "No active version set"**
-A: Run `qrag mcp active <version>` to set one. Download with `qrag download` first if needed.
+A: Run `qrag hub download <version>` to download one, then it will be set automatically.
 
 **Q: "code.db not found"**
-A: Run `qrag prepare` to create one, or download a pre-built version.
+A: Run `qrag hub download <version>` to get a pre-built version, or ask your database preparer to publish one.
 
 **Q: MCP tools not showing in Claude/Gemini**
-A: Re-run `qrag install`, then restart the AI tool. Verify with `gemini mcp list` or `claude mcp list`.
+A: Re-run `qrag ai setup`, then restart the AI tool.
 
 **Q: MCP server shows "Disconnected"**
-A: Ensure `qrag-mcp-server` is installed (`pip install -e .`) and try `qrag install` again.
+A: Ensure qrag is installed (`pip install ...`) and run `qrag ai setup` again.
 
 **Q: Search returns no results**
-A: Check status with `qrag mcp status`, and ensure your query is semantically related to indexed content.
+A: Run `qrag status` to confirm databases are present; ensure your query is semantically related to indexed content.
+
+**Q: "No GitHub authentication"**
+A: Set the `GITHUB_TOKEN` environment variable or run `gh auth login`.
 
 ---
 
-## Contributing
+## For Developers
 
-1. Fork the repo
-2. Create a feature branch (`git checkout -b feature/my-feature`)
-3. Add tests for new functionality
-4. Ensure tests pass (`pytest`)
-5. Submit a pull request
+See [DEVELOPMENT.md](DEVELOPMENT.md) for how to set up a local development environment, run tests, and contribute to qrag.
 
 ---
 
