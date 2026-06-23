@@ -203,6 +203,17 @@ def _is_boilerplate(tag) -> bool:
     )
 
 
+def parse_doc_file(path: Path) -> list[DocSection]:
+    """Dispatch to parse_pdf or parse_html based on file suffix.
+
+    Must be module-level (not a lambda/nested function) so ProcessPoolExecutor
+    can pickle it for cross-process submission.
+    """
+    if path.suffix.lower() == ".pdf":
+        return parse_pdf(path)
+    return parse_html(path)
+
+
 def parse_html(path: Path, doc_type: str = "html") -> list[DocSection]:
     from bs4 import BeautifulSoup, NavigableString, Tag
 

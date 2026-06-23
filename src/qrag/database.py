@@ -106,6 +106,83 @@ def insert_code_chunk(
     return chunk_id
 
 
+def insert_code_chunks_batch(
+    db_path: Path,
+    chunks: list,
+    embeddings: list[list[float]],
+) -> None:
+    """Insert a batch of CodeChunk objects and their embeddings in a single transaction."""
+    db = _open(db_path)
+    try:
+        for chunk, emb in zip(chunks, embeddings):
+            cur = db.execute(
+                "INSERT INTO code_chunks (symbol_name, file_path, line_start, line_end, code_text, type) VALUES (?,?,?,?,?,?)",
+                (chunk.symbol_name, chunk.file_path, chunk.line_start, chunk.line_end, chunk.code_text, chunk.chunk_type),
+            )
+            chunk_id = cur.lastrowid
+            db.execute(
+                "INSERT OR REPLACE INTO symbols (name, type, file_path, line_number, chunk_id) VALUES (?,?,?,?,?)",
+                (chunk.symbol_name, chunk.chunk_type, chunk.file_path, chunk.line_start, chunk_id),
+            )
+            db.execute(
+                "INSERT INTO vec_code (chunk_id, embedding) VALUES (?,?)",
+                (chunk_id, to_blob(emb)),
+            )
+        db.commit()
+    finally:
+        db.close()
+
+
+def insert_doc_sections_batch(
+    db_path: Path,
+    sections: list,
+    embeddings: list[list[float]],
+) -> None:
+    """Insert a batch of DocSection objects and their embeddings in a single transaction."""
+    db = _open(db_path)
+    try:
+        for sec, emb in zip(sections, embeddings):
+            cur = db.execute(
+                """
+                INSERT INTO doc_sections
+                  (source_path, doc_type, chapter, section, subsection,
+                   title, content, page_range, feature_tags)
+                VALUES (?,?,?,?,?,?,?,?,?)
+                """,
+                (sec.source_path, sec.doc_type, sec.chapter, sec.section, sec.subsection,
+                 sec.title, sec.content, sec.page_range, sec.feature_tags),
+            )
+            section_id = cur.lastrowid
+            db.execute(
+                "INSERT INTO vec_docs (section_id, embedding) VALUES (?,?)",
+                (section_id, to_blob(emb)),
+            )
+        db.commit()
+    finally:
+        db.close()
+
+
+def upsert_manifest_rows_batch(
+    db_path: Path,
+    rows: list[tuple[str, str, float, str]],
+) -> None:
+    """Upsert many manifest rows in a single transaction.
+
+    Each row is (rel_path, input_root, mtime, sha256).
+    """
+    if not rows:
+        return
+    db = _open(db_path)
+    try:
+        db.executemany(
+            "INSERT OR REPLACE INTO file_manifest (rel_path, input_root, mtime, sha256) VALUES (?,?,?,?)",
+            rows,
+        )
+        db.commit()
+    finally:
+        db.close()
+
+
 def get_symbol(db_path: Path, name: str) -> dict | None:
     db = _open(db_path)
     row = db.execute(
