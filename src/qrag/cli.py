@@ -817,18 +817,19 @@ def prepare(input_dirs: tuple[Path, ...], output: str, device: str, limit_cpu: i
 # SEARCH — Query indexes locally
 # ---------------------------------------------------------------------------
 
-@cli.group("search", invoke_without_command=True)
-@click.argument("query", required=False)
+@cli.group("search", invoke_without_command=True, context_settings={"allow_extra_args": True, "allow_interspersed_args": False})
 @click.option("--top-k", default=5, show_default=True, help="Number of results to return")
 @click.pass_context
-def search(ctx, query: str | None, top_k: int):
+def search(ctx, top_k: int):
     """Search code and/or docs. Without a subcommand, searches all three."""
     if ctx.invoked_subcommand is not None:
         return  # Subcommand will handle it
 
-    if query is None:
+    if not ctx.args:
         click.echo(ctx.get_help())
         sys.exit(0)
+
+    query = " ".join(ctx.args)
 
     # Search all three: code, docs, symbol (if exact match)
     from .database import search_code as db_search_code, search_docs as db_search_docs, get_symbol as db_get_symbol
