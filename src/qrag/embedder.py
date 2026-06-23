@@ -38,9 +38,14 @@ def _get_model(device: str = "cpu"):
     return _model
 
 
-def embed(texts: Sequence[str], device: str = "cpu") -> list[list[float]]:
+def default_batch_size(device: str) -> int:
+    """Return a device-appropriate default embedding batch size."""
+    return 1024 if device == "cuda" else 256
+
+
+def embed(texts: Sequence[str], device: str = "cpu", precision: str = "float32") -> list[list[float]]:
     model = _get_model(device)
-    return model.encode(list(texts), convert_to_numpy=True).tolist()
+    return model.encode(list(texts), convert_to_numpy=True, precision=precision).tolist()
 
 
 def embed_one(text: str, device: str = "cpu") -> list[float]:
