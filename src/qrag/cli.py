@@ -817,13 +817,32 @@ def prepare(input_dirs: tuple[Path, ...], output: str, device: str, limit_cpu: i
 # SEARCH — Query indexes locally
 # ---------------------------------------------------------------------------
 
-@cli.group("search", invoke_without_command=True, context_settings={"allow_extra_args": True, "allow_interspersed_args": False})
+class _SearchGroup(click.Group):
+    """A Click Group that routes unknown leading tokens to the group callback.
+
+    Click puts the first non-option token in ``_protected_args`` and tries to
+    resolve it as a subcommand, raising UsageError for unrecognised tokens.
+    This subclass moves unrecognised first tokens back into ``ctx.args`` so
+    Click's ``invoke_without_command`` path runs the group callback instead.
+    Registered subcommands (``code``, ``docs``, ``symbol``) route normally.
+    """
+
+    def invoke(self, ctx: click.Context) -> object:
+        all_args = [*ctx._protected_args, *ctx.args]
+        if all_args and all_args[0] not in self.commands:
+            ctx.args = all_args
+            ctx._protected_args = []
+        return super().invoke(ctx)
+
+
+@cli.group("search", cls=_SearchGroup, invoke_without_command=True,
+           context_settings={"allow_extra_args": True, "allow_interspersed_args": False})
 @click.option("--top-k", default=5, show_default=True, help="Number of results to return")
 @click.pass_context
 def search(ctx, top_k: int):
     """Search code and/or docs. Without a subcommand, searches all three."""
     if ctx.invoked_subcommand is not None:
-        return  # Subcommand will handle it
+        return
 
     if not ctx.args:
         click.echo(ctx.get_help())
