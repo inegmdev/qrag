@@ -70,7 +70,17 @@
 - **Always create a feature branch** from `main` for each fix or feature.
 - **Open a PR** for review before merging.
 - Commit messages: **no** `Co-Authored-By` or `Claude-Session` trailers.
-- Active open PR: **#7** (`feat/uv-install-and-error-logging`) — awaiting merge.
+- Active open PR: **#8** (`feat/uv-install-and-error-logging`) — awaiting merge.
+
+## PR Tracking
+
+After opening a PR:
+
+1. Note the PR number and branch in `MEMORY.md` under "Git & PR State".
+2. If CI runs are configured, check the result before closing the session.
+3. If CI fails: diagnose the failure, fix it on the same branch, push, and recheck.
+4. Do not open a new PR or move to the next backlog item while an existing PR has failing CI.
+5. Update `MEMORY.md` when a PR is merged or closed.
 
 ---
 

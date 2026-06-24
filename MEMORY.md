@@ -118,8 +118,8 @@ Full list: [`docs/BACKLOG.md`](docs/BACKLOG.md). Priority order for new sessions
 | Branch | State |
 |--------|-------|
 | `main` | Clean; has README restructure + full backlog audit |
-| `feat/uv-install-and-error-logging` | **PR #7 open** — error logging, uv install, v0.2.0 |
-| `claude/upbeat-meitner-qor3ew` | Session branch (superseded by PR #7) |
+| `feat/uv-install-and-error-logging` | **PR #8 open** — error logging, uv install, v0.2.0, battery-included model (M7), graceful exceptions (H7) |
+| `claude/upbeat-meitner-qor3ew` | Session branch (superseded by PR #8) |
 
 **PR #7** adds: automatic `~/.qrag/logs/` error logging, `main()` entry point, `uv` install docs, v0.2.0 bump, `--version` changelog. Awaiting merge.
 
