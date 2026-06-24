@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import pathlib
 import struct
 from typing import Sequence
 
@@ -7,6 +8,8 @@ _model = None
 _model_device: str | None = None
 MODEL_NAME = "all-MiniLM-L6-v2"
 EMBEDDING_DIM = 384
+
+_BUNDLED_MODEL = pathlib.Path(__file__).parent / "models" / MODEL_NAME
 
 
 def resolve_device(requested: str) -> str:
@@ -32,8 +35,13 @@ def resolve_device(requested: str) -> str:
 def _get_model(device: str = "cpu"):
     global _model, _model_device
     if _model is None or _model_device != device:
+        if not _BUNDLED_MODEL.is_dir():
+            raise RuntimeError(
+                f"Bundled embedding model not found at {_BUNDLED_MODEL}.\n"
+                "Please reinstall qrag: uv tool install git+https://github.com/inegmdev/qrag.git@main"
+            )
         from sentence_transformers import SentenceTransformer
-        _model = SentenceTransformer(MODEL_NAME, device=device)
+        _model = SentenceTransformer(str(_BUNDLED_MODEL), device=device)
         _model_device = device
     return _model
 

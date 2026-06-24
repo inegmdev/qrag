@@ -5,3 +5,4 @@ dist/
 build/
 .venv/
 *.db
+src/qrag/models/

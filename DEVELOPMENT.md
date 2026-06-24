@@ -111,7 +111,12 @@ echo '{"jsonrpc": "2.0", "id": 1, "method": "tools/list"}' | \
 
 ## Building & Distributing
 
+The embedding model (`all-MiniLM-L6-v2`) is bundled inside the wheel so users never need
+a HuggingFace connection at runtime. The model files are gitignored and must be downloaded
+into `src/qrag/models/` before building:
+
 ```bash
+uv run python scripts/download_model.py   # downloads ~90 MB once
 uv build
 # or: pip install build && python -m build
 ```

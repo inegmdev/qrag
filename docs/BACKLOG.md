@@ -48,7 +48,7 @@ When starting a new session, review this file and prefer working on higher-sever
 
 - [ ] **M6** `embedder.py:8` — Embedding model hardcoded with no version stored in the database schema. A future model change silently makes all existing databases incompatible.
 
-- [ ] **M7** `embedder.py`, `pyproject.toml` — Embedding model (`all-MiniLM-L6-v2`) is downloaded from HuggingFace on the first `qrag prepare` run. Corporate and air-gapped environments frequently have TLS certificate issues with HuggingFace HTTPS, causing a hard failure at runtime. Fix: add a post-install script to `pyproject.toml` that pre-downloads the model into the Sentence-Transformers cache during `pip install` / `uv tool install`, so the package is batteries-included and no network call is needed at first use. The wheel itself stays small; the model (~90 MB) is stored in `~/.cache/torch/sentence_transformers/`. Status: Not started.
+- [x] **M7** `embedder.py`, `pyproject.toml` — Embedding model bundled inside the wheel via `scripts/download_model.py` + `[tool.setuptools.package-data]`. `_get_model()` loads from `src/qrag/models/all-MiniLM-L6-v2/` and fails hard with a clear English message if missing. No HuggingFace call at runtime.
 
 ---
 
