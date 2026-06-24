@@ -32,6 +32,9 @@ qrag-mcp-server = "qrag.mcp_server:run"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+qrag = ["models/**/*"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 markers = [
