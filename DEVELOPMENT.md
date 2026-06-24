@@ -8,7 +8,8 @@ This document covers setting up a local development environment, understanding t
 
 - Python 3.10+
 - Git
-- pip (or uv)
+- **uv** (recommended) — https://docs.astral.sh/uv/getting-started/installation/
+  or pip (fallback)
 
 ---
 
@@ -17,10 +18,21 @@ This document covers setting up a local development environment, understanding t
 ```bash
 git clone https://github.com/inegmdev/qrag.git
 cd qrag
+```
 
+**With uv (recommended):**
+
+```bash
+uv sync --extra dev
+```
+
+`uv sync` creates a `.venv` and installs all dependencies including dev extras automatically — no manual venv step needed.
+
+**With pip (fallback):**
+
+```bash
 python3 -m venv venv
 source venv/bin/activate
-
 pip install -e ".[dev]"
 ```
 
@@ -71,27 +83,28 @@ qrag/
 ### Running Tests
 
 ```bash
+uv run pytest
+uv run pytest --cov=src/qrag tests/
+
+# or with pip venv activated:
 pytest
-pytest --cov=src/qrag tests/
 ```
 
 ### Testing the CLI
 
 ```bash
-PYTHONPATH=src qrag --help
-
-PYTHONPATH=src qrag prepare -i tests/fixtures -o dev
-
-PYTHONPATH=src qrag search code "error correction"
-PYTHONPATH=src qrag search docs "configuration"
-PYTHONPATH=src qrag ai setup
+uv run qrag --help
+uv run qrag prepare -i tests/fixtures -o dev
+uv run qrag search code "error correction"
+uv run qrag search docs "configuration"
+uv run qrag ai setup
 ```
 
 ### Testing the MCP Server
 
 ```bash
 echo '{"jsonrpc": "2.0", "id": 1, "method": "tools/list"}' | \
-  PYTHONPATH=src python -m qrag.mcp_server
+  uv run python -m qrag.mcp_server
 ```
 
 ---
@@ -99,8 +112,8 @@ echo '{"jsonrpc": "2.0", "id": 1, "method": "tools/list"}' | \
 ## Building & Distributing
 
 ```bash
-pip install build
-python -m build
+uv build
+# or: pip install build && python -m build
 ```
 
 Distribute a database via GitHub Releases:
