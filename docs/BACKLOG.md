@@ -30,6 +30,8 @@ When starting a new session, review this file and prefer working on higher-sever
 
 - [ ] **H6** `config.py:29-31` — Malformed `~/.qrag/config.json` raises an uncaught `JSONDecodeError`, breaking every qrag command until the file is manually deleted.
 
+- [ ] **H7** `cli.py:main()` — `KeyboardInterrupt` and unhandled exceptions print raw Python tracebacks to the terminal. All user-facing error paths must print a clean English message and exit non-zero; raw tracebacks must never reach the user. The full trace already goes into `~/.qrag/logs/` (since v0.2.0) — that is the right place for it. Status: Not started.
+
 ---
 
 ## Medium — Degraded UX or Performance
@@ -45,6 +47,8 @@ When starting a new session, review this file and prefer working on higher-sever
 - [ ] **M5** `cli.py:658-718` — "Roots differ" error prevents incremental updates when adding a new source directory. Users must `--force` rebuild the entire database.
 
 - [ ] **M6** `embedder.py:8` — Embedding model hardcoded with no version stored in the database schema. A future model change silently makes all existing databases incompatible.
+
+- [ ] **M7** `embedder.py`, `pyproject.toml` — Embedding model (`all-MiniLM-L6-v2`) is downloaded from HuggingFace on the first `qrag prepare` run. Corporate and air-gapped environments frequently have TLS certificate issues with HuggingFace HTTPS, causing a hard failure at runtime. Fix: add a post-install script to `pyproject.toml` that pre-downloads the model into the Sentence-Transformers cache during `pip install` / `uv tool install`, so the package is batteries-included and no network call is needed at first use. The wheel itself stays small; the model (~90 MB) is stored in `~/.cache/torch/sentence_transformers/`. Status: Not started.
 
 ---
 
