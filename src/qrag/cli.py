@@ -1150,40 +1150,45 @@ def hub_delete(version: str):
 
 
 def main() -> None:
-    """Entry point wrapper that writes an error log file on failure."""
+    """Entry point wrapper — catches all exceptions and exits with a clean English message."""
     log_path = _new_log_path()
     _save_log = False
     _exc: BaseException | None = None
+    _exit_code = 0
 
     try:
         cli(standalone_mode=False)
     except click.exceptions.Exit as e:
-        if e.exit_code != 0:
+        _exit_code = e.exit_code or 0
+        if _exit_code != 0:
             _save_log = True
-        raise
     except (click.exceptions.Abort, KeyboardInterrupt):
+        click.echo("\nInterrupted.", err=True)
+        _exit_code = 130
         _save_log = True
-        raise
     except SystemExit as e:
-        if e.code not in (None, 0):
+        _exit_code = e.code if e.code is not None else 0
+        if _exit_code not in (None, 0):
             _save_log = True
-        raise
     except BaseException as e:
         _save_log = True
         _exc = e
-        raise
-    finally:
-        if _save_log:
-            ok = _write_error_log(log_path, _exc)
-            if ok:
-                print(
-                    f"\n{'─' * 60}\n"
-                    f"Something went wrong. A log file has been saved:\n\n"
-                    f"  {log_path}\n\n"
-                    f"To report this issue:\n"
-                    f"  1. Open https://github.com/inegmdev/qrag/issues/new\n"
-                    f"  2. Describe what you were doing\n"
-                    f"  3. Attach the log file above (drag & drop into the issue)\n"
-                    f"{'─' * 60}",
-                    file=sys.stderr,
-                )
+        _exit_code = 1
+        click.echo(f"\nError: {e}", err=True)
+
+    if _save_log:
+        ok = _write_error_log(log_path, _exc)
+        if ok:
+            print(
+                f"\n{'─' * 60}\n"
+                f"Something went wrong. A log file has been saved:\n\n"
+                f"  {log_path}\n\n"
+                f"To report this issue:\n"
+                f"  1. Open https://github.com/inegmdev/qrag/issues/new\n"
+                f"  2. Describe what you were doing\n"
+                f"  3. Attach the log file above (drag & drop into the issue)\n"
+                f"{'─' * 60}",
+                file=sys.stderr,
+            )
+
+    sys.exit(_exit_code)

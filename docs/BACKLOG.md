@@ -30,7 +30,7 @@ When starting a new session, review this file and prefer working on higher-sever
 
 - [ ] **H6** `config.py:29-31` — Malformed `~/.qrag/config.json` raises an uncaught `JSONDecodeError`, breaking every qrag command until the file is manually deleted.
 
-- [ ] **H7** `cli.py:main()` — `KeyboardInterrupt` and unhandled exceptions print raw Python tracebacks to the terminal. All user-facing error paths must print a clean English message and exit non-zero; raw tracebacks must never reach the user. The full trace already goes into `~/.qrag/logs/` (since v0.2.0) — that is the right place for it. Status: Not started.
+- [x] **H7** `cli.py:main()` — Restructured to never re-raise. `KeyboardInterrupt`/`Abort` → "Interrupted." + exit 130. `BaseException` → "Error: <message>" + exit 1. Raw tracebacks no longer reach the terminal; full trace still written to `~/.qrag/logs/`.
 
 ---
 
