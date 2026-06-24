@@ -126,8 +126,22 @@ Given: $ARGUMENTS (your question or topic)
 """
 
 
+_CHANGELOG = """\
+v0.2.0
+  - Automatic error log: on any failure, a log file is written to
+    ~/.qrag/logs/ with version, platform, full command, and traceback.
+    The path is printed to stderr so you can attach it to a bug report.
+  - Producer errors in `prepare` now exit non-zero and appear in the log.
+
+v0.1.0
+  - Initial release: prepare, hub, ai, search, status commands.
+  - Parallel code/doc indexing with Tree-sitter and Sentence-Transformers.
+  - MCP server with search_code, search_docs, get_symbol, list_symbols.
+"""
+
+
 @click.group()
-@click.version_option(__version__)
+@click.version_option(__version__, message=f"%(prog)s %(version)s\n\nChangelog:\n{_CHANGELOG}")
 @click.option("--verbose", is_flag=True, help="Emit structured JSON logs to stderr")
 @click.pass_context
 def cli(ctx, verbose: bool):
