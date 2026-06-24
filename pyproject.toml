@@ -26,7 +26,7 @@ dev = [
 ]
 
 [project.scripts]
-qrag = "qrag.cli:cli"
+qrag = "qrag.cli:main"
 qrag-mcp-server = "qrag.mcp_server:run"
 
 [tool.setuptools.packages.find]
