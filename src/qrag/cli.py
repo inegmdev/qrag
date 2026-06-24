@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import datetime
 import json
 import logging as _logging
 import os
+import platform
 import queue
 import sys
 import threading
+import traceback
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
@@ -24,6 +27,63 @@ from .config import (
 )
 
 _logger = _logging.getLogger("qrag")
+
+
+class _BufferingHandler(_logging.Handler):
+    """Captures all log records in memory so they can be written to an error log file."""
+
+    def __init__(self) -> None:
+        super().__init__(level=_logging.DEBUG)
+        self.records: list[_logging.LogRecord] = []
+
+    def emit(self, record: _logging.LogRecord) -> None:
+        self.records.append(record)
+
+
+_buf_handler = _BufferingHandler()
+_logger.addHandler(_buf_handler)
+_logger.setLevel(_logging.DEBUG)
+
+
+def _log_dir() -> Path:
+    return Path.home() / ".qrag" / "logs"
+
+
+def _new_log_path() -> Path:
+    ts = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    return _log_dir() / f"qrag-{ts}.log"
+
+
+def _write_error_log(log_path: Path, exc: BaseException | None) -> bool:
+    """Write a human-readable error log. Returns False if the write itself fails."""
+    try:
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        plain = _logging.Formatter(
+            fmt="%(asctime)s  %(levelname)-8s  %(name)s  %(message)s",
+            datefmt="%Y-%m-%dT%H:%M:%S",
+        )
+        lines: list[str] = [
+            "=" * 72,
+            "qrag error log",
+            f"  qrag version : {__version__}",
+            f"  python       : {sys.version}",
+            f"  platform     : {platform.platform()}",
+            f"  command      : {' '.join(sys.argv)}",
+            "=" * 72,
+            "",
+            "--- log records ---",
+        ]
+        for record in _buf_handler.records:
+            lines.append(plain.format(record))
+        lines.append("")
+        if exc is not None:
+            lines.append("--- exception ---")
+            lines.extend(traceback.format_exception(type(exc), exc, exc.__traceback__))
+        with open(log_path, "w", encoding="utf-8") as fh:
+            fh.write("\n".join(lines) + "\n")
+        return True
+    except Exception:
+        return False
 
 
 class _JsonFormatter(_logging.Formatter):
@@ -66,8 +126,22 @@ Given: $ARGUMENTS (your question or topic)
 """
 
 
+_CHANGELOG = """\
+v0.2.0
+  - Automatic error log: on any failure, a log file is written to
+    ~/.qrag/logs/ with version, platform, full command, and traceback.
+    The path is printed to stderr so you can attach it to a bug report.
+  - Producer errors in `prepare` now exit non-zero and appear in the log.
+
+v0.1.0
+  - Initial release: prepare, hub, ai, search, status commands.
+  - Parallel code/doc indexing with Tree-sitter and Sentence-Transformers.
+  - MCP server with search_code, search_docs, get_symbol, list_symbols.
+"""
+
+
 @click.group()
-@click.version_option(__version__)
+@click.version_option(__version__, message=f"%(prog)s %(version)s\n\nChangelog:\n{_CHANGELOG}")
 @click.option("--verbose", is_flag=True, help="Emit structured JSON logs to stderr")
 @click.pass_context
 def cli(ctx, verbose: bool):
@@ -776,6 +850,14 @@ def prepare(input_dirs: tuple[Path, ...], output: str, device: str, limit_cpu: i
 
         for msg in producer_errors:
             click.echo(f"  Warning: {msg}", err=True)
+            _logger.error("producer error: %s", msg)
+
+        if producer_errors:
+            click.echo(
+                f"[prepare] {len(producer_errors)} file(s) failed to process.",
+                err=True,
+            )
+            sys.exit(1)
 
         # Batch-write manifests for all successfully processed files
         if successful_code and db_path:
@@ -1065,3 +1147,43 @@ def hub_delete(version: str):
     version_dir = CACHE_DIR / version
     from .github_distribution import delete_database
     delete_database(version_dir)
+
+
+def main() -> None:
+    """Entry point wrapper that writes an error log file on failure."""
+    log_path = _new_log_path()
+    _save_log = False
+    _exc: BaseException | None = None
+
+    try:
+        cli(standalone_mode=False)
+    except click.exceptions.Exit as e:
+        if e.exit_code != 0:
+            _save_log = True
+        raise
+    except (click.exceptions.Abort, KeyboardInterrupt):
+        _save_log = True
+        raise
+    except SystemExit as e:
+        if e.code not in (None, 0):
+            _save_log = True
+        raise
+    except BaseException as e:
+        _save_log = True
+        _exc = e
+        raise
+    finally:
+        if _save_log:
+            ok = _write_error_log(log_path, _exc)
+            if ok:
+                print(
+                    f"\n{'─' * 60}\n"
+                    f"Something went wrong. A log file has been saved:\n\n"
+                    f"  {log_path}\n\n"
+                    f"To report this issue:\n"
+                    f"  1. Open https://github.com/inegmdev/qrag/issues/new\n"
+                    f"  2. Describe what you were doing\n"
+                    f"  3. Attach the log file above (drag & drop into the issue)\n"
+                    f"{'─' * 60}",
+                    file=sys.stderr,
+                )

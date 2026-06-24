@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "qrag"
-version = "0.1.0"
+version = "0.2.0"
 description = "Build semantic RAG databases from your code and docs — once per team, instant for every AI agent"
 requires-python = ">=3.10"
 dependencies = [
@@ -26,7 +26,7 @@ dev = [
 ]
 
 [project.scripts]
-qrag = "qrag.cli:cli"
+qrag = "qrag.cli:main"
 qrag-mcp-server = "qrag.mcp_server:run"
 
 [tool.setuptools.packages.find]

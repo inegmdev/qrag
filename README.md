@@ -12,22 +12,24 @@ Build semantic RAG databases from your code and docs — once per team, instant 
 
 ### 1. Install qrag
 
-**From GitHub (recommended, no PyPI required):**
+**Recommended — installs into an isolated environment, no system-package conflicts:**
 
 ```bash
-pip install git+https://github.com/inegmdev/qrag.git@main
+uv tool install git+https://github.com/inegmdev/qrag.git@main
 ```
 
-If you get a `setuptools` error (e.g. in corporate/offline environments):
-
-```bash
-pip install --no-build-isolation git+https://github.com/inegmdev/qrag.git@main
-```
+> Don't have `uv`? Install it in seconds: https://docs.astral.sh/uv/getting-started/installation/
 
 **From PyPI (once published):**
 
 ```bash
-pip install qrag
+uv tool install qrag
+```
+
+**Fallback — if you prefer pip:**
+
+```bash
+pip install git+https://github.com/inegmdev/qrag.git@main
 ```
 
 ### 2. Point qrag at your team's database repository
@@ -113,8 +115,10 @@ qrag hub download v1.1
 ### 1. Install qrag
 
 ```bash
-pip install git+https://github.com/inegmdev/qrag.git@main
+uv tool install git+https://github.com/inegmdev/qrag.git@main
 ```
+
+> Don't have `uv`? https://docs.astral.sh/uv/getting-started/installation/ — or use `pip install` as a fallback.
 
 ### 2. Configure the distribution repository
 
