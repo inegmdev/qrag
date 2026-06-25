@@ -5,8 +5,9 @@
 
 ---
 
-## Current State
+## Immediate Next Steps (in priority order)
 
+<<<<<<< HEAD
 All three PRs merged to `main`. Working tree clean.
 
 | PR | What it did |
