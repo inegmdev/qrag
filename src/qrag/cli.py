@@ -463,6 +463,37 @@ def _skills_install_global() -> None:
 # BUILD — Create and manage indexes
 # ---------------------------------------------------------------------------
 
+def _ensure_build_deps() -> None:
+    missing = []
+    for module, pkg in [
+        ("tree_sitter", "tree-sitter"),
+        ("tree_sitter_language_pack", "tree-sitter-language-pack"),
+        ("fitz", "pymupdf"),
+    ]:
+        try:
+            __import__(module)
+        except ImportError:
+            missing.append(pkg)
+
+    if not missing:
+        return
+
+    click.echo(
+        f"Error: build dependencies not installed (missing: {', '.join(missing)}).\n"
+        "\n"
+        "Re-install qrag with the 'build' extras:\n"
+        "  uv tool install --reinstall 'qrag[build]'\n"
+        "  pip install --upgrade 'qrag[build]'\n"
+        "  pipenv install 'qrag[build]'\n"
+        "  poetry add qrag --extras build\n"
+        "\n"
+        "For GPU-accelerated embedding also include 'build-gpu':\n"
+        "  uv tool install --reinstall 'qrag[build,build-gpu]'\n",
+        err=True,
+    )
+    sys.exit(1)
+
+
 def _sha256(path: Path) -> str:
     import hashlib
     h = hashlib.sha256()
@@ -673,6 +704,7 @@ def prepare(input_dirs: tuple[Path, ...], output: str, device: str, limit_cpu: i
     On re-run, only changed files are re-embedded. Use --force to rebuild
     everything from scratch.
     """
+    _ensure_build_deps()
     from .embedder import default_batch_size, resolve_device
 
     if limit_cpu is not None and limit_cpu > (os.cpu_count() or 1):
