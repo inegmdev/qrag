@@ -125,8 +125,9 @@ Full authoritative list: [`docs/BACKLOG.md`](docs/BACKLOG.md). **IS1–IS5 are u
 | #10 | `feat/uv-install-and-error-logging` | Merged — SSL fallback for model loading |
 | #11 | `fix/c1-mcp-silent-exception-swallow` | Merged — MCP exception surfacing + logging |
 | #12 | `feat/c0-multi-language-support` | Merged — 305+ language support + build system indexing |
+| #15 | `feat/gh13-role-based-deps` | Open — consumer vs builder dep split; awaiting review |
 
-All branches cleaned up. `main` is current.
+`main` is current. PR #15 open on `feat/gh13-role-based-deps`.
 
 ---
 
