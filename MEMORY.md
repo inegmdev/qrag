@@ -154,6 +154,7 @@ Full authoritative list: [`docs/BACKLOG.md`](docs/BACKLOG.md). **IS1–IS5 are u
 
 1. Read this file (`MEMORY.md`)
 2. Read [`docs/BACKLOG.md`](docs/BACKLOG.md) — **IS1–IS5 are top priority**
-3. Check `git log --oneline -10` and open PRs (#10, #11, #12) for recent changes
-4. Work on IS1 → IS2 → IS3 → IS4 → IS5 → C2 → C3 unless user directs otherwise
-5. Before ending: update `docs/BACKLOG.md` checkboxes, update this file if architecture/scope changed, update `docs/HANDOFF.md`
+3. Run `gh issue list --state open --limit 50` — add any GitHub issues not yet in `docs/BACKLOG.md` (see sync rule in `CLAUDE.md`)
+4. Check `git log --oneline -10` and open PRs (#10, #11, #12) for recent changes
+5. Work on IS1 → IS2 → IS3 → IS4 → IS5 → C2 → C3 unless user directs otherwise
+6. Before ending: update `docs/BACKLOG.md` checkboxes, update this file if architecture/scope changed, update `docs/HANDOFF.md`
