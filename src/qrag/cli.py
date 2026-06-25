@@ -473,18 +473,37 @@ def _sha256(path: Path) -> str:
 
 
 def _detect_input_type(d: Path) -> tuple[list[Path], list[Path]]:
-    """Return (code_files, doc_files) found under d."""
-    code = (
-        sorted(d.rglob("*.c"))
-        + sorted(d.rglob("*.h"))
-        + sorted(d.rglob("*.cpp"))
-    )
+    """Return (code_files, doc_files) found under d.
+
+    Code files: all source files and build system files from the language registry.
+    Doc files: PDF and HTML.
+    """
+    from .chunker import SUPPORTED_EXTENSIONS, BUILD_FILENAMES
+
+    seen: set[Path] = set()
+    code: list[Path] = []
+
+    def _add(p: Path) -> None:
+        if p not in seen:
+            seen.add(p)
+            code.append(p)
+
+    # Source and build files by extension
+    for ext in SUPPORTED_EXTENSIONS:
+        for p in sorted(d.rglob(f"*{ext}")):
+            _add(p)
+
+    # Build system files by exact name (CMakeLists.txt, Makefile, package.json, …)
+    for fname in BUILD_FILENAMES:
+        for p in sorted(d.rglob(fname)):
+            _add(p)
+
     docs = (
         sorted(d.rglob("*.pdf"))
         + sorted(d.rglob("*.html"))
         + sorted(d.rglob("*.htm"))
     )
-    return code, docs
+    return sorted(code), docs
 
 
 _QUEUE_MAXSIZE = 4096
@@ -646,9 +665,10 @@ def _consume_and_embed(
 def prepare(input_dirs: tuple[Path, ...], output: str, device: str, limit_cpu: int | None, batch_size: int | None, force: bool):
     """Parse, embed, and store code and/or docs into a named database.
 
-    Each -i directory is scanned automatically: .c/.h/.cpp files go into code.db,
-    .pdf/.html/.htm files go into docs.db. Pass -i multiple times to combine
-    directories.
+    Each -i directory is scanned automatically: source files and build system
+    files (C, C++, Rust, Python, Go, JS/TS, Java, CMake, Makefile, Cargo.toml,
+    and many more) go into code.db; .pdf/.html/.htm files go into docs.db.
+    Pass -i multiple times to combine directories.
 
     On re-run, only changed files are re-embedded. Use --force to rebuild
     everything from scratch.
@@ -685,19 +705,21 @@ def prepare(input_dirs: tuple[Path, ...], output: str, device: str, limit_cpu: i
     for d in input_dirs:
         code_files, doc_files = _detect_input_type(d)
         if code_files:
-            click.echo(f"[code] {d} — {len(code_files)} .c/.h/.cpp file(s)")
+            exts = sorted({f.suffix.lower() or f.name for f in code_files})
+            ext_str = "/".join(exts[:6]) + ("…" if len(exts) > 6 else "")
+            click.echo(f"[code] {d} — {len(code_files)} file(s) [{ext_str}]")
             code_by_dir[d] = code_files
         if doc_files:
             click.echo(f"[docs] {d} — {len(doc_files)} .pdf/.html file(s)")
             doc_by_dir[d] = doc_files
         if not code_files and not doc_files:
-            click.echo(f"[warn] {d} — no .c/.h/.cpp or .pdf/.html files found, skipping")
+            click.echo(f"[warn] {d} — no supported source, build, or doc files found, skipping")
 
     all_code_files = [f for files in code_by_dir.values() for f in files]
     all_doc_files = [f for files in doc_by_dir.values() for f in files]
 
     if not all_code_files and not all_doc_files:
-        click.echo("No .c/.h/.cpp or .pdf/.html files found in any input directory.", err=True)
+        click.echo("No supported source, build, or doc files found in any input directory.", err=True)
         sys.exit(1)
 
     _logger.info("prepare: %d code file(s), %d doc file(s)", len(all_code_files), len(all_doc_files))
