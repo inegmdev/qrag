@@ -16,9 +16,10 @@ import click
 
 from . import __version__
 from .config import (
-    active_version_dir,
-    code_db_path,
-    docs_db_path,
+    active_version_dirs,
+    add_active_version,
+    code_db_paths,
+    docs_db_paths,
     load_global,
     repo_url,
     save_global,
@@ -165,31 +166,36 @@ def cli(ctx, verbose: bool):
 
 @cli.command("status")
 def status():
-    """Show active version and database file paths."""
+    """Show active versions and database file paths."""
     cfg = load_global()
-    click.echo(f"Active version : {cfg.get('active_version') or '(none)'}")
-    db = code_db_path()
-    click.echo(f"code.db path   : {db or '(not set)'}")
-    click.echo(f"code.db exists : {db.exists() if db else False}")
-    docs_db = docs_db_path()
-    click.echo(f"docs.db path   : {docs_db or '(not set)'}")
-    click.echo(f"docs.db exists : {docs_db.exists() if docs_db else False}")
+    versions = cfg.get("active_versions", [])
+    if not versions:
+        click.echo("Active versions: (none)")
+    else:
+        click.echo(f"Active versions: {', '.join(versions)}")
+        for v in versions:
+            code_db = CACHE_DIR / v / "code.db"
+            docs_db = CACHE_DIR / v / "docs.db"
+            click.echo(f"  [{v}] code.db: {code_db} ({'exists' if code_db.exists() else 'missing'})")
+            click.echo(f"  [{v}] docs.db: {docs_db} ({'exists' if docs_db.exists() else 'missing'})")
 
 
 @cli.command("info")
 def info():
     """Show active version metadata."""
     cfg = load_global()
-    av = cfg.get("active_version")
-    if not av:
-        click.echo("No active version set. Run 'qrag download <version>' first.")
+    versions = cfg.get("active_versions", [])
+    if not versions:
+        click.echo("No active versions set. Run 'qrag ai active <version>' first.")
         sys.exit(1)
-    version_cfg_path = CACHE_DIR / av / "config.json"
-    if version_cfg_path.exists():
-        with open(version_cfg_path) as f:
-            click.echo(json.dumps(json.load(f), indent=2))
-    else:
-        click.echo(f"No config.json found for version '{av}'.")
+    for av in versions:
+        version_cfg_path = CACHE_DIR / av / "config.json"
+        click.echo(f"=== {av} ===")
+        if version_cfg_path.exists():
+            with open(version_cfg_path) as f:
+                click.echo(json.dumps(json.load(f), indent=2))
+        else:
+            click.echo(f"No config.json found for version '{av}'.")
 
 
 @cli.group("ai", invoke_without_command=False)
@@ -199,20 +205,36 @@ def ai():
 
 
 @ai.command("active")
-@click.argument("version", required=False)
-def ai_active(version: str | None):
-    """Show or set the active version."""
+@click.argument("versions", nargs=-1, required=False)
+def ai_active(versions: tuple[str, ...]):
+    """Show or set the active version(s).
+
+    Pass one or more version names to replace the active list.
+    Pass no arguments to show the current active versions.
+
+    Examples:
+      qrag ai active                    # show active versions
+      qrag ai active my-sdk             # set one active version
+      qrag ai active my-sdk my-rtos     # set multiple active versions
+    """
     cfg = load_global()
-    if version is None:
-        click.echo(f"Active version: {cfg.get('active_version') or '(none)'}")
+    if not versions:
+        current = cfg.get("active_versions", [])
+        if current:
+            click.echo("Active versions:")
+            for v in current:
+                click.echo(f"  {v}")
+        else:
+            click.echo("Active versions: (none)")
     else:
-        target = CACHE_DIR / version
-        if not target.exists():
-            click.echo(f"Version '{version}' not found in {CACHE_DIR}. Download it first.", err=True)
+        missing = [v for v in versions if not (CACHE_DIR / v).exists()]
+        if missing:
+            for v in missing:
+                click.echo(f"Error: version '{v}' not found in {CACHE_DIR}. Download it first.", err=True)
             sys.exit(1)
-        cfg["active_version"] = version
+        cfg["active_versions"] = list(versions)
         save_global(cfg)
-        click.echo(f"Active version set to: {version}")
+        click.echo(f"Active versions set to: {', '.join(versions)}")
 
 
 @ai.command("setup")
@@ -943,10 +965,8 @@ def prepare(input_dirs: tuple[Path, ...], output: str, device: str, limit_cpu: i
     with open(out_dir / "config.json", "w") as f:
         json.dump(version_cfg, f, indent=2)
 
-    cfg = load_global()
-    cfg["active_version"] = output
-    save_global(cfg)
-    click.echo(f"Active version set to '{output}'.")
+    add_active_version(output)
+    click.echo(f"Version '{output}' added to active versions.")
 
 
 # ---------------------------------------------------------------------------
@@ -991,49 +1011,72 @@ def search(ctx, top_k: int):
     from .embedder import embed_one
 
     found_any = False
+    q_emb = embed_one(query)
 
-    # Try exact symbol match first
-    code_db = code_db_path()
-    if code_db and code_db.exists():
-        result = db_get_symbol(code_db, query)
-        if result is not None:
-            click.echo(f"\n[SYMBOL] {result['symbol_name']}  ({result['type']})")
-            click.echo(f"File   : {result['file_path']}:{result['line_start']}-{result['line_end']}")
-            click.echo(f"\n{result['code_text']}")
-            found_any = True
+    # Try exact symbol match first across all active code DBs
+    for code_db in code_db_paths():
+        if code_db.exists():
+            result = db_get_symbol(code_db, query)
+            if result is not None:
+                click.echo(f"\n[SYMBOL] {result['symbol_name']}  ({result['type']})")
+                click.echo(f"File   : {result['file_path']}:{result['line_start']}-{result['line_end']}")
+                click.echo(f"\n{result['code_text']}")
+                found_any = True
+                break
 
-    # Search code
-    if code_db and code_db.exists():
-        q_emb = embed_one(query)
-        results = db_search_code(code_db, q_emb, top_k=top_k)
-        if results:
-            if found_any:
-                click.echo("\n" + "="*70)
-            click.echo("\n[CODE]")
-            for i, r in enumerate(results, 1):
-                click.echo(
-                    f"[{i}] {r['symbol_name']}  ({r['type']})  score={r['similarity_score']}\n"
-                    f"    {r['file_path']}:{r['line_start']}-{r['line_end']}"
-                )
-            found_any = True
+    # Search code across all active code DBs
+    all_code: list[dict] = []
+    for code_db in code_db_paths():
+        if code_db.exists():
+            all_code.extend(db_search_code(code_db, q_emb, top_k=top_k))
+    all_code.sort(key=lambda r: r.get("similarity_score", 0), reverse=True)
+    seen_code: set[tuple] = set()
+    merged_code = []
+    for r in all_code:
+        key = (r.get("file_path"), r.get("line_start"))
+        if key not in seen_code:
+            seen_code.add(key)
+            merged_code.append(r)
+        if len(merged_code) >= top_k:
+            break
+    if merged_code:
+        if found_any:
+            click.echo("\n" + "="*70)
+        click.echo("\n[CODE]")
+        for i, r in enumerate(merged_code, 1):
+            click.echo(
+                f"[{i}] {r['symbol_name']}  ({r['type']})  score={r['similarity_score']}\n"
+                f"    {r['file_path']}:{r['line_start']}-{r['line_end']}"
+            )
+        found_any = True
 
-    # Search docs
-    docs_db = docs_db_path()
-    if docs_db and docs_db.exists():
-        q_emb = embed_one(query)
-        results = db_search_docs(docs_db, q_emb, top_k=top_k)
-        if results:
-            if found_any:
-                click.echo("\n" + "="*70)
-            click.echo("\n[DOCS]")
-            for i, r in enumerate(results, 1):
-                tags = ", ".join(r["feature_tags"]) if r["feature_tags"] else ""
-                page = f"  p.{r['page_range']}" if r["page_range"] else ""
-                click.echo(
-                    f"[{i}] {r['title']}  score={r['similarity_score']}{page}\n"
-                    f"    Tags: {tags}"
-                )
-            found_any = True
+    # Search docs across all active docs DBs
+    all_docs: list[dict] = []
+    for docs_db in docs_db_paths():
+        if docs_db.exists():
+            all_docs.extend(db_search_docs(docs_db, q_emb, top_k=top_k))
+    all_docs.sort(key=lambda r: r.get("similarity_score", 0), reverse=True)
+    seen_docs: set[tuple] = set()
+    merged_docs = []
+    for r in all_docs:
+        key = (r.get("source_path"), r.get("page_range"))
+        if key not in seen_docs:
+            seen_docs.add(key)
+            merged_docs.append(r)
+        if len(merged_docs) >= top_k:
+            break
+    if merged_docs:
+        if found_any:
+            click.echo("\n" + "="*70)
+        click.echo("\n[DOCS]")
+        for i, r in enumerate(merged_docs, 1):
+            tags = ", ".join(r["feature_tags"]) if r["feature_tags"] else ""
+            page = f"  p.{r['page_range']}" if r["page_range"] else ""
+            click.echo(
+                f"[{i}] {r['title']}  score={r['similarity_score']}{page}\n"
+                f"    Tags: {tags}"
+            )
+        found_any = True
 
     if not found_any:
         click.echo("No results found in code or docs.")
@@ -1048,18 +1091,29 @@ def search_code(query: str, top_k: int):
     from .database import search_code as db_search
     from .embedder import embed_one
 
-    db = code_db_path()
-    if db is None:
-        click.echo("No active version set. Run `qrag mcp active <version>`.", err=True)
-        sys.exit(1)
-    if not db.exists():
-        click.echo(f"code.db not found at {db}. Run `qrag prepare` first.", err=True)
+    dbs = [p for p in code_db_paths() if p.exists()]
+    if not dbs:
+        click.echo("No active code databases. Run `qrag ai active <version>` first.", err=True)
         sys.exit(1)
 
-    _logger.debug("search-code: query=%r top_k=%d db=%s", query, top_k, db)
     q_emb = embed_one(query)
-    results = db_search(db, q_emb, top_k=top_k)
-    _logger.info("search-code: %d result(s) for query=%r", len(results), query)
+    all_results: list[dict] = []
+    for db in dbs:
+        _logger.debug("search-code: query=%r top_k=%d db=%s", query, top_k, db)
+        all_results.extend(db_search(db, q_emb, top_k=top_k))
+
+    all_results.sort(key=lambda r: r.get("similarity_score", 0), reverse=True)
+    seen: set[tuple] = set()
+    results = []
+    for r in all_results:
+        key = (r.get("file_path"), r.get("line_start"))
+        if key not in seen:
+            seen.add(key)
+            results.append(r)
+        if len(results) >= top_k:
+            break
+
+    _logger.info("search-code: %d result(s) for query=%r across %d db(s)", len(results), query, len(dbs))
 
     if not results:
         click.echo("No results found.")
@@ -1082,18 +1136,29 @@ def search_docs(query: str, top_k: int):
     from .database import search_docs as db_search
     from .embedder import embed_one
 
-    db = docs_db_path()
-    if db is None:
-        click.echo("No active version set. Run `qrag mcp active <version>`.", err=True)
-        sys.exit(1)
-    if not db.exists():
-        click.echo(f"docs.db not found at {db}. Run `qrag prepare -i <docs_dir>` first.", err=True)
+    dbs = [p for p in docs_db_paths() if p.exists()]
+    if not dbs:
+        click.echo("No active docs databases. Run `qrag ai active <version>` first.", err=True)
         sys.exit(1)
 
-    _logger.debug("search-docs: query=%r top_k=%d db=%s", query, top_k, db)
     q_emb = embed_one(query)
-    results = db_search(db, q_emb, top_k=top_k)
-    _logger.info("search-docs: %d result(s) for query=%r", len(results), query)
+    all_results: list[dict] = []
+    for db in dbs:
+        _logger.debug("search-docs: query=%r top_k=%d db=%s", query, top_k, db)
+        all_results.extend(db_search(db, q_emb, top_k=top_k))
+
+    all_results.sort(key=lambda r: r.get("similarity_score", 0), reverse=True)
+    seen: set[tuple] = set()
+    results = []
+    for r in all_results:
+        key = (r.get("source_path"), r.get("page_range"))
+        if key not in seen:
+            seen.add(key)
+            results.append(r)
+        if len(results) >= top_k:
+            break
+
+    _logger.info("search-docs: %d result(s) for query=%r across %d db(s)", len(results), query, len(dbs))
 
     if not results:
         click.echo("No results found.")
@@ -1116,15 +1181,16 @@ def search_symbol(name: str):
     """Look up exact symbol definition by name."""
     from .database import get_symbol as db_get_symbol
 
-    db = code_db_path()
-    if db is None:
-        click.echo("No active version set. Run `qrag mcp active <version>`.", err=True)
-        sys.exit(1)
-    if not db.exists():
-        click.echo(f"code.db not found at {db}. Run `qrag prepare` first.", err=True)
+    dbs = [p for p in code_db_paths() if p.exists()]
+    if not dbs:
+        click.echo("No active code databases. Run `qrag ai active <version>` first.", err=True)
         sys.exit(1)
 
-    result = db_get_symbol(db, name)
+    result = None
+    for db in dbs:
+        result = db_get_symbol(db, name)
+        if result is not None:
+            break
     if result is None:
         click.echo(f"Symbol '{name}' not found.")
         sys.exit(1)
@@ -1169,10 +1235,8 @@ def hub_download(version: str):
     from .github_distribution import download_database
     download_database(url, version, CACHE_DIR)
 
-    cfg = load_global()
-    cfg["active_version"] = version
-    save_global(cfg)
-    click.echo(f"Active version set to '{version}'.")
+    add_active_version(version)
+    click.echo(f"Version '{version}' added to active versions.")
 
 
 @hub.command("push")
