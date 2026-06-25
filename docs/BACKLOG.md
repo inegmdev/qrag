@@ -8,6 +8,8 @@ When starting a new session, review this file and prefer working on higher-sever
 
 ## Critical — Broken or Data-Loss Risk
 
+- [ ] **C0** `chunker.py`, `pyproject.toml` — Only C and C++ are supported. Extend to all tree-sitter-supported languages so any codebase can be indexed. Work: (1) add grammar packages to `pyproject.toml` (`tree-sitter-rust`, `tree-sitter-javascript`, `tree-sitter-java`, `tree-sitter-python`, `tree-sitter-go`, `tree-sitter-typescript`, etc.); (2) build a `LANGUAGE_MAP` in `chunker.py` keyed by file extension — node-type names differ per grammar (Rust: `function_item`/`struct_item`, JS: `function_declaration`/`class_declaration`); (3) generalise `_extract_chunks()`; (4) update file-extension filter in `cli.py`; (5) add `--languages` flag on `prepare` so users opt-in rather than pulling every grammar into the wheel.
+
 - [x] **C1** `mcp_server.py:226-229` — All exceptions silently swallowed with `continue`. Fixed in PR #11: `JSONDecodeError` → `-32700` response + log; unhandled `Exception` → `-32603` response + full traceback logged to `~/.qrag/logs/mcp_errors.log`; `KeyboardInterrupt`/`SystemExit` → clean exit 0; fatal loop crash → log + exit 1.
 
 - [ ] **C2** `cli.py:543,547` — `db_path`/`ddb_path` can be `None` in code-only or docs-only `prepare` runs, causing a `TypeError` crash. Single-type indexing is a documented use case.
@@ -53,8 +55,6 @@ When starting a new session, review this file and prefer working on higher-sever
 ---
 
 ## Low — Nice-to-Have
-
-- [ ] **L8** `chunker.py`, `pyproject.toml` — Only C and C++ are supported (`tree-sitter-c`, `tree-sitter-cpp`). Extend to all tree-sitter-supported languages so embedded and non-embedded teams can index any codebase. Work involves: (1) adding language grammar packages to `pyproject.toml` (e.g. `tree-sitter-rust`, `tree-sitter-javascript`, `tree-sitter-java`, `tree-sitter-python`, `tree-sitter-go`, `tree-sitter-typescript`); (2) building a `LANGUAGE_MAP` in `chunker.py` keyed by file extension; (3) generalising `_extract_chunks()` — the node-type names for functions/structs/macros differ per grammar and must be mapped per language (e.g. Rust uses `function_item`, `struct_item`; JS uses `function_declaration`, `class_declaration`); (4) updating `cli.py` file-extension filter (`chunker.py:190`) to include all registered extensions; (5) exposing a `--languages` flag on `prepare` so users can opt-in to languages they actually need rather than pulling every grammar into the wheel.
 
 
 
