@@ -12,6 +12,12 @@ OVERLAP_TOKENS = 64
 _SEC_NUM = re.compile(r"^(\d+)(?:\.(\d+))?(?:\.(\d+))?")
 # ALL-CAPS abbreviations 2-8 chars used as feature tags
 _ABBREV = re.compile(r"\b([A-Z][A-Z0-9]{1,7})\b")
+# Revision from filename: _rev3, _v2, _r1, _Rev1.2, -v3, v3 suffix before extension
+_REV_RE = re.compile(r"[_\-\s](?:rev?|ver?|version)\.?\s*(\d+[\.\d]*)", re.I)
+# Status keywords in filename
+_STATUS_KEYWORDS = ("released", "approved", "final", "review", "draft", "obsolete")
+# Figure/table references in body text
+_FIG_TABLE_RE = re.compile(r"\b(?:Figure|Fig\.?|Table)\s+[\d]+(?:[.\-]\d+)*", re.I)
 
 
 @dataclass
@@ -25,6 +31,36 @@ class DocSection:
     content: str
     page_range: str        # e.g. "42" or "42-45"
     feature_tags: str      # comma-separated
+    doc_name: str = ""     # filename without directory
+    doc_revision: str = "" # revision extracted from filename, e.g. "3" from "_rev3"
+    doc_status: str = ""   # draft | review | released | final | approved | obsolete
+    word_count: int = 0    # len(content.split())
+    fig_table_refs: str = ""  # comma-separated Figure/Table references found in content
+
+
+def _extract_revision(filename: str) -> str:
+    m = _REV_RE.search(filename)
+    return m.group(1) if m else ""
+
+
+def _extract_status(filename: str) -> str:
+    lower = filename.lower()
+    for kw in _STATUS_KEYWORDS:
+        if kw in lower:
+            return kw
+    return ""
+
+
+def _extract_fig_table_refs(content: str) -> str:
+    refs = _FIG_TABLE_RE.findall(content[:3000])
+    seen: set[str] = set()
+    unique: list[str] = []
+    for r in refs:
+        r = r.strip()
+        if r not in seen:
+            seen.add(r)
+            unique.append(r)
+    return ",".join(unique[:20])
 
 
 def _token_count(text: str) -> int:
@@ -46,6 +82,8 @@ def _extract_tags(title: str, content: str) -> str:
 def _split_section(sec: DocSection) -> list[DocSection]:
     """Split a large section into overlapping sub-sections."""
     if _token_count(sec.content) <= MAX_TOKENS:
+        sec.word_count = len(sec.content.split())
+        sec.fig_table_refs = _extract_fig_table_refs(sec.content)
         return [sec]
 
     words = sec.content.split()
@@ -65,6 +103,11 @@ def _split_section(sec: DocSection) -> list[DocSection]:
             content=text,
             page_range=sec.page_range,
             feature_tags=sec.feature_tags,
+            doc_name=sec.doc_name,
+            doc_revision=sec.doc_revision,
+            doc_status=sec.doc_status,
+            word_count=len(chunk_words),
+            fig_table_refs=_extract_fig_table_refs(text),
         ))
         idx += 1
         if i + MAX_TOKENS >= len(words):
@@ -91,6 +134,9 @@ def parse_pdf(path: Path, doc_type: str = "pdf") -> list[DocSection]:
 
     doc = fitz.open(str(path))
     source = str(path)
+    doc_name = path.name
+    doc_revision = _extract_revision(path.stem)
+    doc_status = _extract_status(path.stem)
 
     # First pass: collect all spans to determine body font size (mode)
     sizes: list[float] = []
@@ -139,6 +185,9 @@ def parse_pdf(path: Path, doc_type: str = "pdf") -> list[DocSection]:
             content=content,
             page_range=page_range,
             feature_tags=_extract_tags(cur_title, content),
+            doc_name=doc_name,
+            doc_revision=doc_revision,
+            doc_status=doc_status,
         )
         sections.extend(_split_section(sec))
 
@@ -226,6 +275,9 @@ def parse_html(path: Path, doc_type: str = "html") -> list[DocSection]:
             tag.decompose()
 
     source = str(path)
+    doc_name = path.name
+    doc_revision = _extract_revision(path.stem)
+    doc_status = _extract_status(path.stem)
     sections: list[DocSection] = []
     cur_ch, cur_se, cur_sub = 0, 0, ""
     cur_title = ""
@@ -247,6 +299,9 @@ def parse_html(path: Path, doc_type: str = "html") -> list[DocSection]:
             content=content,
             page_range="",
             feature_tags=_extract_tags(cur_title, content),
+            doc_name=doc_name,
+            doc_revision=doc_revision,
+            doc_status=doc_status,
         )
         sections.extend(_split_section(sec))
 

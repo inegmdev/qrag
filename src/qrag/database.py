@@ -18,12 +18,23 @@ def _open(db_path: Path) -> sqlite3.Connection:
     return db
 
 
+_CODE_MIGRATIONS: list[tuple[str, str, str]] = [
+    # (table, column, type)
+    ("code_chunks", "language",    "TEXT"),
+    ("symbols",     "language",    "TEXT"),
+    ("code_chunks", "file_name",   "TEXT"),
+    ("code_chunks", "parent_name", "TEXT"),
+    ("code_chunks", "call_depth",  "INTEGER"),
+    ("code_chunks", "chunk_index", "INTEGER"),
+]
+
+
 def _open_code(db_path: Path) -> sqlite3.Connection:
-    """Open a code DB and migrate schema if needed (adds language column)."""
+    """Open a code DB and migrate schema if needed."""
     db = _open(db_path)
-    for table in ("code_chunks", "symbols"):
+    for table, col, col_type in _CODE_MIGRATIONS:
         try:
-            db.execute(f"ALTER TABLE {table} ADD COLUMN language TEXT")
+            db.execute(f"ALTER TABLE {table} ADD COLUMN {col} {col_type}")
             db.commit()
         except sqlite3.OperationalError:
             pass  # column already exists
@@ -38,11 +49,15 @@ def init_code_db(db_path: Path) -> None:
             id          INTEGER PRIMARY KEY,
             symbol_name TEXT,
             file_path   TEXT,
+            file_name   TEXT,
             line_start  INTEGER,
             line_end    INTEGER,
             code_text   TEXT,
             type        TEXT,
-            language    TEXT
+            language    TEXT,
+            parent_name TEXT,
+            call_depth  INTEGER DEFAULT 0,
+            chunk_index INTEGER DEFAULT 0
         );
         CREATE TABLE IF NOT EXISTS symbols (
             id          INTEGER PRIMARY KEY,
@@ -66,13 +81,6 @@ def init_code_db(db_path: Path) -> None:
         );
     """)
     db.commit()
-    # Migrate existing DBs opened by init_code_db path
-    for table in ("code_chunks", "symbols"):
-        try:
-            db.execute(f"ALTER TABLE {table} ADD COLUMN language TEXT")
-            db.commit()
-        except sqlite3.OperationalError:
-            pass
     db.close()
 
 
@@ -102,14 +110,22 @@ def insert_code_chunk(
     chunk_type: str,
     embedding: list[float],
     language: str = "",
+    parent_name: str = "",
+    call_depth: int = 0,
+    chunk_index: int = 0,
 ) -> int:
+    from pathlib import Path as _Path
+    file_name = _Path(file_path).name
     db = _open_code(db_path)
     cur = db.execute(
         """
-        INSERT INTO code_chunks (symbol_name, file_path, line_start, line_end, code_text, type, language)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO code_chunks
+          (symbol_name, file_path, file_name, line_start, line_end, code_text,
+           type, language, parent_name, call_depth, chunk_index)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
-        (symbol_name, file_path, line_start, line_end, code_text, chunk_type, language),
+        (symbol_name, file_path, file_name, line_start, line_end, code_text,
+         chunk_type, language, parent_name, call_depth, chunk_index),
     )
     chunk_id = cur.lastrowid
 
@@ -134,13 +150,25 @@ def insert_code_chunks_batch(
     embeddings: list[list[float]],
 ) -> None:
     """Insert a batch of CodeChunk objects and their embeddings in a single transaction."""
+    from pathlib import Path as _Path
     db = _open_code(db_path)
     try:
         for chunk, emb in zip(chunks, embeddings):
             lang = getattr(chunk, "language", "")
+            file_name = _Path(chunk.file_path).name
+            parent_name = getattr(chunk, "parent_name", "")
+            call_depth = getattr(chunk, "call_depth", 0)
+            chunk_index = getattr(chunk, "chunk_index", 0)
             cur = db.execute(
-                "INSERT INTO code_chunks (symbol_name, file_path, line_start, line_end, code_text, type, language) VALUES (?,?,?,?,?,?,?)",
-                (chunk.symbol_name, chunk.file_path, chunk.line_start, chunk.line_end, chunk.code_text, chunk.chunk_type, lang),
+                """
+                INSERT INTO code_chunks
+                  (symbol_name, file_path, file_name, line_start, line_end, code_text,
+                   type, language, parent_name, call_depth, chunk_index)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?)
+                """,
+                (chunk.symbol_name, chunk.file_path, file_name,
+                 chunk.line_start, chunk.line_end, chunk.code_text,
+                 chunk.chunk_type, lang, parent_name, call_depth, chunk_index),
             )
             chunk_id = cur.lastrowid
             db.execute(
@@ -156,24 +184,50 @@ def insert_code_chunks_batch(
         db.close()
 
 
+_DOCS_MIGRATIONS: list[tuple[str, str]] = [
+    # (column, type)
+    ("doc_name",      "TEXT"),
+    ("doc_revision",  "TEXT"),
+    ("doc_status",    "TEXT"),
+    ("word_count",    "INTEGER"),
+    ("fig_table_refs","TEXT"),
+]
+
+
+def _open_docs(db_path: Path) -> sqlite3.Connection:
+    """Open a docs DB and migrate schema if needed."""
+    db = _open(db_path)
+    for col, col_type in _DOCS_MIGRATIONS:
+        try:
+            db.execute(f"ALTER TABLE doc_sections ADD COLUMN {col} {col_type}")
+            db.commit()
+        except sqlite3.OperationalError:
+            pass  # column already exists
+    return db
+
+
 def insert_doc_sections_batch(
     db_path: Path,
     sections: list,
     embeddings: list[list[float]],
 ) -> None:
     """Insert a batch of DocSection objects and their embeddings in a single transaction."""
-    db = _open(db_path)
+    db = _open_docs(db_path)
     try:
         for sec, emb in zip(sections, embeddings):
             cur = db.execute(
                 """
                 INSERT INTO doc_sections
                   (source_path, doc_type, chapter, section, subsection,
-                   title, content, page_range, feature_tags)
-                VALUES (?,?,?,?,?,?,?,?,?)
+                   title, content, page_range, feature_tags,
+                   doc_name, doc_revision, doc_status, word_count, fig_table_refs)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """,
                 (sec.source_path, sec.doc_type, sec.chapter, sec.section, sec.subsection,
-                 sec.title, sec.content, sec.page_range, sec.feature_tags),
+                 sec.title, sec.content, sec.page_range, sec.feature_tags,
+                 getattr(sec, "doc_name", ""), getattr(sec, "doc_revision", ""),
+                 getattr(sec, "doc_status", ""), getattr(sec, "word_count", 0),
+                 getattr(sec, "fig_table_refs", "")),
             )
             section_id = cur.lastrowid
             db.execute(
@@ -261,16 +315,21 @@ def init_docs_db(db_path: Path) -> None:
     db = _open(db_path)
     db.executescript(f"""
         CREATE TABLE IF NOT EXISTS doc_sections (
-            id           INTEGER PRIMARY KEY,
-            source_path  TEXT,
-            doc_type     TEXT,
-            chapter      INTEGER,
-            section      INTEGER,
-            subsection   TEXT,
-            title        TEXT,
-            content      TEXT,
-            page_range   TEXT,
-            feature_tags TEXT
+            id            INTEGER PRIMARY KEY,
+            source_path   TEXT,
+            doc_type      TEXT,
+            chapter       INTEGER,
+            section       INTEGER,
+            subsection    TEXT,
+            title         TEXT,
+            content       TEXT,
+            page_range    TEXT,
+            feature_tags  TEXT,
+            doc_name      TEXT,
+            doc_revision  TEXT,
+            doc_status    TEXT,
+            word_count    INTEGER,
+            fig_table_refs TEXT
         );
         CREATE VIRTUAL TABLE IF NOT EXISTS vec_docs USING vec0(
             section_id INTEGER,
@@ -324,7 +383,7 @@ def delete_manifest_row(db_path: Path, rel_path: str, input_root: str) -> None:
 
 def delete_sections_for_source(db_path: Path, source_path: str) -> None:
     """Remove all doc_sections and vectors for a source file (upsert support)."""
-    db = _open(db_path)
+    db = _open_docs(db_path)
     rows = db.execute(
         "SELECT id FROM doc_sections WHERE source_path = ?", (source_path,)
     ).fetchall()
@@ -349,17 +408,24 @@ def insert_doc_section(
     page_range: str,
     feature_tags: str,
     embedding: list[float],
+    doc_name: str = "",
+    doc_revision: str = "",
+    doc_status: str = "",
+    word_count: int = 0,
+    fig_table_refs: str = "",
 ) -> int:
-    db = _open(db_path)
+    db = _open_docs(db_path)
     cur = db.execute(
         """
         INSERT INTO doc_sections
           (source_path, doc_type, chapter, section, subsection,
-           title, content, page_range, feature_tags)
-        VALUES (?,?,?,?,?,?,?,?,?)
+           title, content, page_range, feature_tags,
+           doc_name, doc_revision, doc_status, word_count, fig_table_refs)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         """,
         (source_path, doc_type, chapter, section, subsection,
-         title, content, page_range, feature_tags),
+         title, content, page_range, feature_tags,
+         doc_name, doc_revision, doc_status, word_count, fig_table_refs),
     )
     section_id = cur.lastrowid
     db.execute(
@@ -372,12 +438,14 @@ def insert_doc_section(
 
 
 def search_docs(db_path: Path, query_embedding: list[float], top_k: int = 5) -> list[dict[str, Any]]:
-    db = _open(db_path)
+    db = _open_docs(db_path)
     rows = db.execute(
         """
         SELECT
+            d.source_path, d.doc_type, d.doc_name, d.doc_revision, d.doc_status,
             d.chapter, d.section, d.subsection, d.title,
-            d.content, d.page_range, d.feature_tags, d.doc_type,
+            d.content, d.page_range, d.feature_tags,
+            d.word_count, d.fig_table_refs,
             v.distance
         FROM vec_docs v
         JOIN doc_sections d ON d.id = v.section_id
@@ -393,14 +461,22 @@ def search_docs(db_path: Path, query_embedding: list[float], top_k: int = 5) -> 
     for row in rows:
         similarity = max(0.0, 1.0 - row["distance"])
         tags = row["feature_tags"] or ""
+        refs = row["fig_table_refs"] or ""
         results.append({
+            "source_path": row["source_path"] or "",
+            "doc_name": row["doc_name"] or "",
+            "doc_revision": row["doc_revision"] or "",
+            "doc_status": row["doc_status"] or "",
+            "doc_type": row["doc_type"],
             "chapter": row["chapter"],
             "section": row["section"],
+            "subsection": row["subsection"] or "",
             "title": row["title"],
             "content": row["content"][:400],
-            "page_range": row["page_range"],
-            "feature_tags": tags.split(",") if tags else [],
-            "doc_type": row["doc_type"],
+            "page_range": row["page_range"] or "",
+            "feature_tags": [t for t in tags.split(",") if t] if tags else [],
+            "word_count": row["word_count"] or 0,
+            "fig_table_refs": [r for r in refs.split(",") if r] if refs else [],
             "similarity_score": round(similarity, 4),
         })
     return results
@@ -413,11 +489,15 @@ def search_code(db_path: Path, query_embedding: list[float], top_k: int = 5) -> 
         SELECT
             c.symbol_name,
             c.file_path,
+            c.file_name,
             c.line_start,
             c.line_end,
             c.code_text,
             c.type,
             c.language,
+            c.parent_name,
+            c.call_depth,
+            c.chunk_index,
             v.distance
         FROM vec_code v
         JOIN code_chunks c ON c.id = v.chunk_id
@@ -436,11 +516,15 @@ def search_code(db_path: Path, query_embedding: list[float], top_k: int = 5) -> 
             {
                 "symbol_name": row["symbol_name"],
                 "file_path": row["file_path"],
+                "file_name": row["file_name"] or "",
                 "line_start": row["line_start"],
                 "line_end": row["line_end"],
                 "code_snippet": row["code_text"][:300],
                 "type": row["type"],
                 "language": row["language"] or "",
+                "parent_name": row["parent_name"] or "",
+                "call_depth": row["call_depth"] or 0,
+                "chunk_index": row["chunk_index"] or 0,
                 "similarity_score": round(similarity, 4),
             }
         )
