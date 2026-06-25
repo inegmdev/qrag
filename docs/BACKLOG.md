@@ -8,7 +8,7 @@ When starting a new session, review this file and prefer working on higher-sever
 
 ## Critical — Broken or Data-Loss Risk
 
-- [ ] **C1** `mcp_server.py:226-229` — All exceptions silently swallowed with `continue`. Malformed requests and internal errors produce no output or log; the server appears running but isn't.
+- [x] **C1** `mcp_server.py:226-229` — All exceptions silently swallowed with `continue`. Fixed in PR #11: `JSONDecodeError` → `-32700` response + log; unhandled `Exception` → `-32603` response + full traceback logged to `~/.qrag/logs/mcp_errors.log`; `KeyboardInterrupt`/`SystemExit` → clean exit 0; fatal loop crash → log + exit 1.
 
 - [ ] **C2** `cli.py:543,547` — `db_path`/`ddb_path` can be `None` in code-only or docs-only `prepare` runs, causing a `TypeError` crash. Single-type indexing is a documented use case.
 
