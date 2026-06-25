@@ -8,7 +8,7 @@ When starting a new session, review this file and prefer working on higher-sever
 
 ## Critical — Broken or Data-Loss Risk
 
-> **IS1–IS5 are user-declared top priorities** (from `docs/ISSUES.md`). Work on these before any other open item.
+> **IS1–IS5 are user-declared top priorities**. Work on these before any other open item.
 
 - [ ] **IS1** `cli.py`, `embedder.py` — TUI is plain echo/print with no visual structure. Modernize `qrag prepare` (and all long-running commands) with rich progress bars (per-file chunking, per-batch embedding, per-batch DB write), live ETA, elapsed time display, and a final summary line. Recommended library: `rich` (already a transitive dep via sentence-transformers — check before adding). Each pipeline stage (scan → chunk → embed → store) should have its own progress bar so the user always knows where the bottleneck is.
 

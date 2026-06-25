@@ -1,20 +1,20 @@
 # qrag — Session Handoff
 
 **Date:** 2026-06-26
-**Session summary:** Branch hygiene + C1 fix (MCP exceptions) + C0 feat (multi-language support) + top-priority items from ISSUES.md
+**Session summary:** Branch hygiene + C1 fix (MCP exceptions) + C0 feat (multi-language support) + IS1–IS5 backlog items promoted to top priority
 
 ---
 
 ## Immediate Next Steps (in priority order)
 
-<<<<<<< HEAD
-All three PRs merged to `main`. Working tree clean.
+All PRs merged to `main`. Working tree clean.
 
 | PR | What it did |
 |----|-------------|
 | **#10** (merged) | SSL fallback + clear error message when bundled model is absent |
 | **#11** (merged) | MCP server no longer swallows exceptions — `-32700`/`-32603` responses + `mcp_errors.log` |
 | **#12** (merged) | 305+ language support via `tree-sitter-language-pack`; build system files indexed as code; `language` column in DB |
+| **#15** (merged) | Consumer vs builder dep split; `[build]`/`[build-gpu]`/`[full]` extras; `_ensure_build_deps()` guard in `prepare` |
 
 ---
 
@@ -38,12 +38,17 @@ All three PRs merged to `main`. Working tree clean.
 - Build file chunks: cmake `add_executable/add_library` → `constant`; Makefile targets → `function`; TOML sections → `struct`
 - `search_code`, `list_symbols`, `get_symbol` all return `language` field
 
+### GH#13 — Consumer vs builder dep split (PR #15)
+- Consumer baseline: `click + sqlite-vec + sentence-transformers`
+- Builder extras in `[build]`: `tree-sitter`, `tree-sitter-language-pack`, `pymupdf`, `html2text`, `beautifulsoup4`
+- `[build-gpu]`: `torch>=2.0`; `[full]`: both combined
+- `_ensure_build_deps()` probes builder modules at `prepare` entry; prints reinstall instructions and exits 1 if missing
+
 ### Documentation & prioritization
-- `docs/ISSUES.md` added to repo — source of IS1–IS5
 - IS1–IS5 added as top-of-Critical in `docs/BACKLOG.md` (user-declared highest priority)
 - H0 (build-source relationship metadata) added to High tier
 - L8 (shebang sniffing) added to Low tier
-- `MEMORY.md` fully refreshed for multi-language era
+- `MEMORY.md` fully refreshed
 - `CLAUDE.md` updated with GitHub issue sync rule (mandatory on every backlog query)
 
 ---
@@ -70,7 +75,6 @@ All three PRs merged to `main`. Working tree clean.
 | `src/qrag/doc_parser.py` | IS4 work happens here |
 | `src/qrag/mcp_server.py` | IS3 multi-DB fan-out work happens here |
 | `docs/BACKLOG.md` | IS1–IS5 at the top — read before starting |
-| `docs/ISSUES.md` | Original source of IS1–IS5 |
 
 ---
 
