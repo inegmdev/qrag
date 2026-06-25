@@ -54,6 +54,10 @@ When starting a new session, review this file and prefer working on higher-sever
 
 ## Low — Nice-to-Have
 
+- [ ] **L8** `chunker.py`, `pyproject.toml` — Only C and C++ are supported (`tree-sitter-c`, `tree-sitter-cpp`). Extend to all tree-sitter-supported languages so embedded and non-embedded teams can index any codebase. Work involves: (1) adding language grammar packages to `pyproject.toml` (e.g. `tree-sitter-rust`, `tree-sitter-javascript`, `tree-sitter-java`, `tree-sitter-python`, `tree-sitter-go`, `tree-sitter-typescript`); (2) building a `LANGUAGE_MAP` in `chunker.py` keyed by file extension; (3) generalising `_extract_chunks()` — the node-type names for functions/structs/macros differ per grammar and must be mapped per language (e.g. Rust uses `function_item`, `struct_item`; JS uses `function_declaration`, `class_declaration`); (4) updating `cli.py` file-extension filter (`chunker.py:190`) to include all registered extensions; (5) exposing a `--languages` flag on `prepare` so users can opt-in to languages they actually need rather than pulling every grammar into the wheel.
+
+
+
 - [ ] **L1** `cli.py:851-904` — No deduplication when a result appears in both code and docs search output.
 
 - [ ] **L2** `cli.py` — No `--dry-run` mode for `prepare` to preview what would be indexed without building the database.
