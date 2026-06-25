@@ -51,6 +51,18 @@
 - When a new issue is discovered: add it to the correct severity tier in `docs/BACKLOG.md` before or alongside the fix.
 - Severity order: **Critical → High → Medium → Low**.
 
+### GitHub Issue Sync — MANDATORY when the user asks about the backlog
+
+Whenever the user asks about the backlog, what's next, or what issues exist:
+
+1. Run `gh issue list --state open --limit 50` to fetch all open GitHub issues.
+2. For each GitHub issue **not already tracked** in `docs/BACKLOG.md` (match by title or GH issue number):
+   - Add it to the appropriate severity tier in `docs/BACKLOG.md`.
+   - Use the format: `- [ ] **GH#<N>** — <title>. [GitHub](<url>)`
+   - Assign a severity tier based on the issue title/body (default to **High** if unclear).
+3. Commit the additions to `docs/BACKLOG.md` with message: `docs: sync GitHub issues to backlog`.
+4. Report the sync result to the user (X new issues added, Y already tracked).
+
 ### Top Open Issues (as of last update — verify in `docs/BACKLOG.md`)
 
 | ID | File:Line | Summary |

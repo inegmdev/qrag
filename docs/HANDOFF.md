@@ -1,91 +1,87 @@
 # qrag — Session Handoff
 
-**Date:** 2026-06-24  
-**Branch in progress:** `feat/uv-install-and-error-logging`  
-**Open PR:** [#7 — feat: error log on failure + uv as primary install + v0.2.0](https://github.com/inegmdev/qrag/pull/7)
-
----
-
-## What Was Done This Session
-
-### 1. README & DEVELOPMENT.md restructured (merged to main via PR #6 / now in PR #7)
-- `README.md` rewritten user-first: End Users → Database Preparers → link to DEVELOPMENT.md
-- `DEVELOPMENT.md` created to hold all developer-facing content (was inline in README)
-
-### 2. Codebase audit → `docs/BACKLOG.md` (on main)
-- Full audit conducted across all source files
-- 25 issues logged across Critical / High / Medium / Low tiers
-- `CLAUDE.md` updated to instruct every new session to read `docs/BACKLOG.md` first
-
-### 3. Automatic error log on failure (`feat/uv-install-and-error-logging`, PR #7)
-- Any command that exits non-zero or crashes writes `~/.qrag/logs/qrag-YYYYMMDD-HHMMSS.log`
-- Log contains: qrag version, Python version, platform, full argv, all internal log records, exception traceback
-- stderr message prints the log path and links to `github.com/inegmdev/qrag/issues/new`
-- New `main()` entry point wraps `cli(standalone_mode=False)` to intercept all exit paths
-- Producer errors in `prepare` now exit non-zero (previously silently succeeded)
-- `pyproject.toml` entry point changed from `qrag.cli:cli` → `qrag.cli:main`
-
-### 4. Version bumped to 0.2.0 (PR #7)
-- `src/qrag/__init__.py` and `pyproject.toml` updated
-- `--version` now prints a changelog via `_CHANGELOG` constant in `cli.py`
-
-### 5. uv as primary install method (PR #7)
-- `README.md` now leads with `uv tool install git+...` for both end users and database preparers
-- `DEVELOPMENT.md` now leads with `uv sync --extra dev`, with pip as explicit fallback
-- All CLI test commands in DEVELOPMENT.md use `uv run qrag ...`
+**Date:** 2026-06-26
+**Session summary:** Branch hygiene + C1 fix (MCP exceptions) + C0 feat (multi-language support) + top-priority items from ISSUES.md
 
 ---
 
 ## Current State
 
-| Item | Status |
-|------|--------|
-| `main` branch | Clean; has audit backlog + README restructure |
-| PR #7 | Open, awaiting review & merge |
-| Old branch `claude/upbeat-meitner-qor3ew` | Superseded by PR #7; can be deleted |
-| Backlog items | All 25 items still open — none fixed yet |
+All three PRs merged to `main`. Working tree clean.
+
+| PR | What it did |
+|----|-------------|
+| **#10** (merged) | SSL fallback + clear error message when bundled model is absent |
+| **#11** (merged) | MCP server no longer swallows exceptions — `-32700`/`-32603` responses + `mcp_errors.log` |
+| **#12** (merged) | 305+ language support via `tree-sitter-language-pack`; build system files indexed as code; `language` column in DB |
 
 ---
 
-## Immediate Next Steps
+## What Was Done This Session
 
-1. **Merge PR #7** after review
-2. **Fix C2** (`cli.py`) — `db_path`/`ddb_path` can be `None` in code-only or docs-only `prepare` runs → `TypeError` crash (highest-impact, easiest fix)
-3. **Fix C1** (`mcp_server.py:226-229`) — silent exception swallowing in MCP server event loop
-4. **Fix C3** (`database.py`) — DB connections not closed on exception → file descriptor exhaustion
-5. **Fix H6** (`config.py:29-31`) — uncaught `JSONDecodeError` on malformed config breaks all commands
+### Branch cleanup
+- Closed PR #9 (`feat/fix-model-loading`) — superseded by #10
+- Deleted remote branches: `feat/fix-model-loading`, `claude/upbeat-meitner-qor3ew`
 
-See [`docs/BACKLOG.md`](BACKLOG.md) for the full prioritized list.
+### C1 fix — MCP silent exception swallowing (PR #11)
+- `_log_error()` → appends timestamped entries to `~/.qrag/logs/mcp_errors.log`
+- `run()` loop: `-32700` on bad JSON, `-32603` on internal errors, exit 0 on interrupt, exit 1 + log on fatal crash
+- File: `src/qrag/mcp_server.py`
 
----
+### C0 feat — Multi-language support (PR #12)
+- `tree-sitter-language-pack` replaces `tree-sitter-c` + `tree-sitter-cpp`
+- `_EXT_REGISTRY` (40+ extensions) + `_FILENAME_REGISTRY` (CMakeLists.txt, Makefile, Cargo.toml, package.json, go.mod, pom.xml, conanfile.py, …)
+- Language-agnostic `chunk_type`: function/class/struct/interface/enum/macro/type_alias/module/constant
+- `language` TEXT column in `code_chunks` and `symbols`; auto-migration in `_open_code()`
+- `_detect_input_type()` now registry-driven
+- Build file chunks: cmake `add_executable/add_library` → `constant`; Makefile targets → `function`; TOML sections → `struct`
+- `search_code`, `list_symbols`, `get_symbol` all return `language` field
 
-## Key Files
-
-| File | Purpose |
-|------|---------|
-| `src/qrag/cli.py` | Main CLI; `main()` entry point, `_BufferingHandler`, `_write_error_log()` |
-| `src/qrag/mcp_server.py` | JSON-RPC MCP server (C1 lives here) |
-| `src/qrag/database.py` | SQLite + sqlite-vec operations (C3, H1, H2 live here) |
-| `src/qrag/config.py` | Config load/save (H6 lives here) |
-| `src/qrag/chunker.py` | Tree-sitter code parsing (H5, M2 live here) |
-| `docs/BACKLOG.md` | Authoritative issue list — update checkboxes as items are fixed |
-| `CLAUDE.md` | Session instructions — read at start of every session |
-
----
-
-## Git Workflow Established This Session
-
-- **Always create a new feature branch** from `main` (never reuse `claude/*` branches)
-- **Always open a PR** for review before merging
-- **Never push directly to `main`** without user confirmation
-- Commit messages: no `Co-Authored-By` or `Claude-Session` trailers (per `CLAUDE.md`)
+### Documentation & prioritization
+- `docs/ISSUES.md` added to repo — source of IS1–IS5
+- IS1–IS5 added as top-of-Critical in `docs/BACKLOG.md` (user-declared highest priority)
+- H0 (build-source relationship metadata) added to High tier
+- L8 (shebang sniffing) added to Low tier
+- `MEMORY.md` fully refreshed for multi-language era
+- `CLAUDE.md` updated with GitHub issue sync rule (mandatory on every backlog query)
 
 ---
 
-## Suggested Skills
+## Immediate Next Steps (in priority order)
 
-For the next session, the following skills are relevant:
+1. **IS1** — Rich TUI: `rich` progress bars + ETA for `qrag prepare` (scan → chunk → embed → store stages)
+2. **IS2** — Post-prepare report: `prepare-report.txt` with per-file language/chunks/time + skipped files
+3. **IS4** — Rich doc metadata: doc name, revision, status, full section hierarchy, page number in `doc_sections`
+4. **IS5** — Rich code metadata: parent block name, call depth, chunk index in `code_chunks`
+5. **IS3** — Multi-database fan-out search (benchmark 100 DB scenario first)
+6. **C2** — Fix `db_path`/`ddb_path` None crash in code-only or docs-only `prepare`
+7. **C3** — Close DB connections on exception
 
-- **`/diagnosing-bugs`** — use when investigating C1 (silent MCP exceptions) or C3 (unclosed DB connections)
-- **`/tdd`** — use when fixing C2/C3/H6; all fixes should be test-driven given the risk of regression
-- **`/code-review`** — run on the diff before pushing any fix to catch secondary issues
+---
+
+## Key Files for Next Session
+
+| File | Why it matters |
+|------|---------------|
+| `src/qrag/chunker.py` | Full rewrite this session — understand `_EXT_REGISTRY`, `_FILENAME_REGISTRY`, `_Rule`, `_LangConfig` |
+| `src/qrag/database.py` | `_open_code()` migration wrapper; `language` column in all code queries |
+| `src/qrag/cli.py` | IS1/IS2 work happens here |
+| `src/qrag/doc_parser.py` | IS4 work happens here |
+| `src/qrag/mcp_server.py` | IS3 multi-DB fan-out work happens here |
+| `docs/BACKLOG.md` | IS1–IS5 at the top — read before starting |
+| `docs/ISSUES.md` | Original source of IS1–IS5 |
+
+---
+
+## Known Risk for PR #12
+
+`conanfile.txt` is registered with `ts_name="ini"` — if tree-sitter-language-pack doesn't have an `ini` grammar, `_get_cached_parser("ini")` raises `RuntimeError` on first use. Fix: remove `conanfile.txt` from `_FILENAME_REGISTRY` or map it to a plain-text fallback that returns zero chunks gracefully.
+
+---
+
+## Git Conventions
+
+- Always create a feature branch from `main`
+- Always open a PR before merging
+- Never push directly to `main`
+- No `Co-Authored-By` trailers in commit messages
