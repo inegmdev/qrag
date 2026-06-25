@@ -7,6 +7,7 @@ import datetime
 import json
 import sys
 import traceback
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from .config import load_global, CACHE_DIR
@@ -31,75 +32,139 @@ def _error_response(req_id, code: int, message: str) -> dict:
     return {"jsonrpc": "2.0", "id": req_id, "error": {"code": code, "message": message}}
 
 
-def _ensure_active_version() -> tuple[Path, Path]:
-    """Ensure an active version is set and return code_db, docs_db paths."""
+def _get_active_dbs() -> tuple[list[Path], list[Path]]:
+    """Return (code_dbs, docs_dbs) for all active versions that exist on disk."""
     cfg = load_global()
-    active = cfg.get("active_version")
-    if not active:
-        raise RuntimeError("No active version set. Run `qrag mcp active <version>` first.")
-
-    code_db = CACHE_DIR / active / "code.db"
-    docs_db = CACHE_DIR / active / "docs.db"
-
-    if not code_db.exists() and not docs_db.exists():
+    versions = cfg.get("active_versions", [])
+    if not versions:
         raise RuntimeError(
-            f"No databases found for version '{active}'. "
-            f"Expected: {code_db} or {docs_db}"
+            "No active versions set. Run `qrag ai active <version>` first."
         )
 
-    return code_db, docs_db
+    code_dbs = [p for v in versions if (p := CACHE_DIR / v / "code.db").exists()]
+    docs_dbs = [p for v in versions if (p := CACHE_DIR / v / "docs.db").exists()]
+
+    if not code_dbs and not docs_dbs:
+        raise RuntimeError(
+            f"No databases found for active versions: {versions}. "
+            "Download them first with `qrag hub download <version>`."
+        )
+
+    return code_dbs, docs_dbs
+
+
+def _merge_code(all_results: list[dict], top_k: int) -> list[dict]:
+    """Sort by score, deduplicate by (file_path, line_start), return top_k."""
+    all_results.sort(key=lambda r: r.get("similarity_score", 0), reverse=True)
+    seen: set[tuple] = set()
+    merged = []
+    for r in all_results:
+        key = (r.get("file_path"), r.get("line_start"))
+        if key not in seen:
+            seen.add(key)
+            merged.append(r)
+        if len(merged) >= top_k:
+            break
+    return merged
+
+
+def _merge_docs(all_results: list[dict], top_k: int) -> list[dict]:
+    """Sort by score, deduplicate by (source_path, page_range), return top_k."""
+    all_results.sort(key=lambda r: r.get("similarity_score", 0), reverse=True)
+    seen: set[tuple] = set()
+    merged = []
+    for r in all_results:
+        key = (r.get("source_path"), r.get("page_range"))
+        if key not in seen:
+            seen.add(key)
+            merged.append(r)
+        if len(merged) >= top_k:
+            break
+    return merged
 
 
 def search_code_impl(query: str) -> list[dict]:
-    """Semantic search across indexed code chunks."""
-    code_db, _ = _ensure_active_version()
-    if not code_db.exists():
+    """Semantic search across all active code databases."""
+    code_dbs, _ = _get_active_dbs()
+    if not code_dbs:
         return []
 
     q_emb = embed_one(query)
-    results = db_search_code(code_db, q_emb, top_k=10)
-    return results
+    all_results: list[dict] = []
+
+    with ThreadPoolExecutor(max_workers=min(len(code_dbs), 8)) as pool:
+        futures = {pool.submit(db_search_code, db, q_emb, 10): db for db in code_dbs}
+        for fut in as_completed(futures):
+            try:
+                all_results.extend(fut.result())
+            except Exception as e:
+                _log_error(f"search_code fan-out error ({futures[fut]}): {e}")
+
+    return _merge_code(all_results, top_k=10)
 
 
 def search_docs_impl(query: str) -> list[dict]:
-    """Semantic search across indexed documentation sections."""
-    _, docs_db = _ensure_active_version()
-    if not docs_db.exists():
+    """Semantic search across all active docs databases."""
+    _, docs_dbs = _get_active_dbs()
+    if not docs_dbs:
         return []
 
     q_emb = embed_one(query)
-    results = db_search_docs(docs_db, q_emb, top_k=10)
-    return results
+    all_results: list[dict] = []
+
+    with ThreadPoolExecutor(max_workers=min(len(docs_dbs), 8)) as pool:
+        futures = {pool.submit(db_search_docs, db, q_emb, 10): db for db in docs_dbs}
+        for fut in as_completed(futures):
+            try:
+                all_results.extend(fut.result())
+            except Exception as e:
+                _log_error(f"search_docs fan-out error ({futures[fut]}): {e}")
+
+    return _merge_docs(all_results, top_k=10)
 
 
 def get_symbol_definition_impl(symbol: str) -> dict:
-    """Get the exact definition of a symbol."""
-    code_db, _ = _ensure_active_version()
-    if not code_db.exists():
-        return {"error": "Code database not found"}
+    """Get the exact definition of a symbol, searching all active code databases."""
+    code_dbs, _ = _get_active_dbs()
+    if not code_dbs:
+        return {"error": "No active code databases found"}
 
-    result = db_get_symbol(code_db, symbol)
-    if result is None:
-        return {"error": f"Symbol '{symbol}' not found"}
+    for code_db in code_dbs:
+        result = db_get_symbol(code_db, symbol)
+        if result is not None:
+            return {
+                "symbol_name": result["symbol_name"],
+                "type": result["type"],
+                "file_path": result["file_path"],
+                "line_start": result["line_start"],
+                "line_end": result["line_end"],
+                "code": result["code_text"],
+            }
 
-    return {
-        "symbol_name": result["symbol_name"],
-        "type": result["type"],
-        "file_path": result["file_path"],
-        "line_start": result["line_start"],
-        "line_end": result["line_end"],
-        "code": result["code_text"],
-    }
+    return {"error": f"Symbol '{symbol}' not found"}
 
 
 def list_symbols_impl(pattern: str = "", limit: int = 200) -> list[dict]:
-    """List indexed symbols, optionally filtered by pattern."""
-    code_db, _ = _ensure_active_version()
-    if not code_db.exists():
+    """List symbols across all active code databases, deduplicated by name."""
+    code_dbs, _ = _get_active_dbs()
+    if not code_dbs:
         return []
 
-    results = db_list_symbols(code_db, pattern, limit)
-    return results
+    all_results: list[dict] = []
+    for code_db in code_dbs:
+        all_results.extend(db_list_symbols(code_db, pattern, limit))
+
+    seen: set[str] = set()
+    merged = []
+    for r in all_results:
+        name = r.get("symbol_name", "")
+        if name not in seen:
+            seen.add(name)
+            merged.append(r)
+        if len(merged) >= limit:
+            break
+
+    return merged
 
 
 # Tool definitions for MCP
