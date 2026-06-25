@@ -33,9 +33,33 @@ def _get_model(device: str = "cpu"):
     global _model, _model_device
     if _model is None or _model_device != device:
         from sentence_transformers import SentenceTransformer
-        _model = SentenceTransformer(MODEL_NAME, device=device)
+        try:
+            _model = SentenceTransformer(MODEL_NAME, device=device)
+        except Exception as exc:
+            _raise_model_load_error(exc)
         _model_device = device
     return _model
+
+
+def _raise_model_load_error(exc: Exception) -> None:
+    msg = str(exc).lower()
+    if any(k in msg for k in ("ssl", "certificate", "cert", "proxy")):
+        raise RuntimeError(
+            f"Failed to download the embedding model due to an SSL/certificate error:\n  {exc}\n\n"
+            "Options to fix this:\n"
+            "  1. Install the correct CA certificate for your network and retry.\n"
+            "  2. Set the REQUESTS_CA_BUNDLE environment variable to your CA bundle path.\n"
+            "  3. On a machine with internet access, download the model and copy it here:\n"
+            "       pip install sentence-transformers\n"
+            "       python -c \"from sentence_transformers import SentenceTransformer; "
+            "SentenceTransformer('all-MiniLM-L6-v2').save('model')\"\n"
+            "     Then set HF_HOME or SENTENCE_TRANSFORMERS_HOME to point at the saved directory."
+        ) from None
+    raise RuntimeError(
+        f"Failed to load the embedding model ({MODEL_NAME}): {exc}\n\n"
+        "Try reinstalling qrag:\n"
+        "  uv tool install git+https://github.com/inegmdev/qrag.git@main"
+    ) from None
 
 
 def default_batch_size(device: str) -> int:
