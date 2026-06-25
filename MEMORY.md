@@ -36,7 +36,7 @@
 | `uv` as primary install method | ✅ PR #8 |
 | Rich TUI with progress bars + ETA | ❌ IS1 — top priority |
 | Post-prepare audit report file | ❌ IS2 — top priority |
-| Multi-database search (fan-out across N active DBs) | ❌ IS3 — top priority |
+| Multi-database search (fan-out across N active DBs) | ✅ PR #16 |
 | Rich doc metadata (name, revision, status, page, section hierarchy) | ❌ IS4 — top priority |
 | Rich code metadata (parent block, call depth, chunk index within parent) | ❌ IS5 — top priority |
 | PyPI publish | ❌ Not done |
@@ -106,7 +106,7 @@ Full authoritative list: [`docs/BACKLOG.md`](docs/BACKLOG.md). **IS1–IS5 are u
 |----|----------|---------|
 | **IS1** | Critical | Ugly TUI — add rich progress bars + ETA to `prepare` and all long-running commands |
 | **IS2** | Critical | No post-prepare report — write `prepare-report.txt` with per-file language, chunks, time |
-| **IS3** | Critical | Single active DB only — implement multi-DB fan-out search |
+| ~~**IS3**~~ | ~~Critical~~ | ~~Single active DB only~~ — resolved PR #16 |
 | **IS4** | Critical | Doc chunks missing rich metadata (doc name, revision, status, section hierarchy, page) |
 | **IS5** | Critical | Code chunks missing rich metadata (parent block, call depth, chunk index) |
 | **C2** | Critical | `db_path`/`ddb_path` can be `None` in code-only or docs-only `prepare` → `TypeError` |
@@ -126,6 +126,7 @@ Full authoritative list: [`docs/BACKLOG.md`](docs/BACKLOG.md). **IS1–IS5 are u
 | #11 | `fix/c1-mcp-silent-exception-swallow` | Merged — MCP exception surfacing + logging |
 | #12 | `feat/c0-multi-language-support` | Merged — 305+ language support + build system indexing |
 | #15 | `feat/gh13-role-based-deps` | Merged — consumer vs builder dep split |
+| #16 | `feat/is3-multi-db-fanout` | Merged — multi-DB fan-out search (IS3) |
 
 All branches cleaned up. `main` is current.
 
@@ -141,7 +142,7 @@ All branches cleaned up. `main` is current.
 - **`language` column** in `code_chunks` and `symbols` — AI agent knows whether a result is from Rust, CMake, etc.
 - **Function-level chunking** — tree-sitter identifies exact boundaries; large symbols auto-split with overlap
 - **Section-level doc chunking** — preserves heading hierarchy and page references (important for TRM navigation)
-- **Single active version** (for now) — IS3 will lift this to multi-DB fan-out
+- **Multi-DB fan-out** (IS3, PR #16) — `active_versions` list; all MCP tools fan-out in parallel via ThreadPoolExecutor, merge by score, dedup
 - **GitHub Releases** for database distribution — no custom infra needed
 - **`uv tool install`** as primary install method — isolated envs, no system-package conflicts
 - Entry point: `qrag.cli:main` (wraps `cli()` for error-log writing on non-zero exit since v0.2.0)
