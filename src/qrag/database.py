@@ -18,6 +18,18 @@ def _open(db_path: Path) -> sqlite3.Connection:
     return db
 
 
+def _open_code(db_path: Path) -> sqlite3.Connection:
+    """Open a code DB and migrate schema if needed (adds language column)."""
+    db = _open(db_path)
+    for table in ("code_chunks", "symbols"):
+        try:
+            db.execute(f"ALTER TABLE {table} ADD COLUMN language TEXT")
+            db.commit()
+        except sqlite3.OperationalError:
+            pass  # column already exists
+    return db
+
+
 def init_code_db(db_path: Path) -> None:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     db = _open(db_path)
@@ -29,12 +41,14 @@ def init_code_db(db_path: Path) -> None:
             line_start  INTEGER,
             line_end    INTEGER,
             code_text   TEXT,
-            type        TEXT
+            type        TEXT,
+            language    TEXT
         );
         CREATE TABLE IF NOT EXISTS symbols (
             id          INTEGER PRIMARY KEY,
             name        TEXT UNIQUE,
             type        TEXT,
+            language    TEXT,
             file_path   TEXT,
             line_number INTEGER,
             chunk_id    INTEGER REFERENCES code_chunks(id)
@@ -52,12 +66,19 @@ def init_code_db(db_path: Path) -> None:
         );
     """)
     db.commit()
+    # Migrate existing DBs opened by init_code_db path
+    for table in ("code_chunks", "symbols"):
+        try:
+            db.execute(f"ALTER TABLE {table} ADD COLUMN language TEXT")
+            db.commit()
+        except sqlite3.OperationalError:
+            pass
     db.close()
 
 
 def delete_chunks_for_file(db_path: Path, file_path: str) -> None:
     """Remove all chunks and vectors belonging to a file (for upsert on re-run)."""
-    db = _open(db_path)
+    db = _open_code(db_path)
     rows = db.execute(
         "SELECT id FROM code_chunks WHERE file_path = ?", (file_path,)
     ).fetchall()
@@ -80,20 +101,21 @@ def insert_code_chunk(
     code_text: str,
     chunk_type: str,
     embedding: list[float],
+    language: str = "",
 ) -> int:
-    db = _open(db_path)
+    db = _open_code(db_path)
     cur = db.execute(
         """
-        INSERT INTO code_chunks (symbol_name, file_path, line_start, line_end, code_text, type)
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT INTO code_chunks (symbol_name, file_path, line_start, line_end, code_text, type, language)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
         """,
-        (symbol_name, file_path, line_start, line_end, code_text, chunk_type),
+        (symbol_name, file_path, line_start, line_end, code_text, chunk_type, language),
     )
     chunk_id = cur.lastrowid
 
     db.execute(
-        "INSERT OR REPLACE INTO symbols (name, type, file_path, line_number, chunk_id) VALUES (?,?,?,?,?)",
-        (symbol_name, chunk_type, file_path, line_start, chunk_id),
+        "INSERT OR REPLACE INTO symbols (name, type, language, file_path, line_number, chunk_id) VALUES (?,?,?,?,?,?)",
+        (symbol_name, chunk_type, language, file_path, line_start, chunk_id),
     )
 
     db.execute(
@@ -112,17 +134,18 @@ def insert_code_chunks_batch(
     embeddings: list[list[float]],
 ) -> None:
     """Insert a batch of CodeChunk objects and their embeddings in a single transaction."""
-    db = _open(db_path)
+    db = _open_code(db_path)
     try:
         for chunk, emb in zip(chunks, embeddings):
+            lang = getattr(chunk, "language", "")
             cur = db.execute(
-                "INSERT INTO code_chunks (symbol_name, file_path, line_start, line_end, code_text, type) VALUES (?,?,?,?,?,?)",
-                (chunk.symbol_name, chunk.file_path, chunk.line_start, chunk.line_end, chunk.code_text, chunk.chunk_type),
+                "INSERT INTO code_chunks (symbol_name, file_path, line_start, line_end, code_text, type, language) VALUES (?,?,?,?,?,?,?)",
+                (chunk.symbol_name, chunk.file_path, chunk.line_start, chunk.line_end, chunk.code_text, chunk.chunk_type, lang),
             )
             chunk_id = cur.lastrowid
             db.execute(
-                "INSERT OR REPLACE INTO symbols (name, type, file_path, line_number, chunk_id) VALUES (?,?,?,?,?)",
-                (chunk.symbol_name, chunk.chunk_type, chunk.file_path, chunk.line_start, chunk_id),
+                "INSERT OR REPLACE INTO symbols (name, type, language, file_path, line_number, chunk_id) VALUES (?,?,?,?,?,?)",
+                (chunk.symbol_name, chunk.chunk_type, lang, chunk.file_path, chunk.line_start, chunk_id),
             )
             db.execute(
                 "INSERT INTO vec_code (chunk_id, embedding) VALUES (?,?)",
@@ -184,10 +207,10 @@ def upsert_manifest_rows_batch(
 
 
 def get_symbol(db_path: Path, name: str) -> dict | None:
-    db = _open(db_path)
+    db = _open_code(db_path)
     row = db.execute(
         """
-        SELECT c.symbol_name, c.type, c.file_path, c.line_start, c.line_end, c.code_text
+        SELECT c.symbol_name, c.type, c.language, c.file_path, c.line_start, c.line_end, c.code_text
         FROM symbols s
         JOIN code_chunks c ON c.id = s.chunk_id
         WHERE s.name = ?
@@ -201,10 +224,10 @@ def get_symbol(db_path: Path, name: str) -> dict | None:
 
 
 def list_symbols(db_path: Path, pattern: str = "", limit: int = 200) -> list[dict[str, Any]]:
-    db = _open(db_path)
+    db = _open_code(db_path)
     if pattern:
         query = """
-            SELECT name, type, file_path, line_number
+            SELECT name, type, language, file_path, line_number
             FROM symbols
             WHERE name LIKE ?
             ORDER BY name
@@ -213,7 +236,7 @@ def list_symbols(db_path: Path, pattern: str = "", limit: int = 200) -> list[dic
         rows = db.execute(query, (f"%{pattern}%", limit)).fetchall()
     else:
         query = """
-            SELECT name, type, file_path, line_number
+            SELECT name, type, language, file_path, line_number
             FROM symbols
             ORDER BY name
             LIMIT ?
@@ -226,6 +249,7 @@ def list_symbols(db_path: Path, pattern: str = "", limit: int = 200) -> list[dic
         results.append({
             "name": row["name"],
             "type": row["type"],
+            "language": row["language"] or "",
             "file": row["file_path"],
             "line": row["line_number"],
         })
@@ -383,7 +407,7 @@ def search_docs(db_path: Path, query_embedding: list[float], top_k: int = 5) -> 
 
 
 def search_code(db_path: Path, query_embedding: list[float], top_k: int = 5) -> list[dict[str, Any]]:
-    db = _open(db_path)
+    db = _open_code(db_path)
     rows = db.execute(
         """
         SELECT
@@ -393,6 +417,7 @@ def search_code(db_path: Path, query_embedding: list[float], top_k: int = 5) -> 
             c.line_end,
             c.code_text,
             c.type,
+            c.language,
             v.distance
         FROM vec_code v
         JOIN code_chunks c ON c.id = v.chunk_id
@@ -406,7 +431,6 @@ def search_code(db_path: Path, query_embedding: list[float], top_k: int = 5) -> 
 
     results = []
     for row in rows:
-        # cosine distance in [0,2]; similarity = 1 - distance maps to [-1,1]
         similarity = max(0.0, 1.0 - row["distance"])
         results.append(
             {
@@ -416,6 +440,7 @@ def search_code(db_path: Path, query_embedding: list[float], top_k: int = 5) -> 
                 "line_end": row["line_end"],
                 "code_snippet": row["code_text"][:300],
                 "type": row["type"],
+                "language": row["language"] or "",
                 "similarity_score": round(similarity, 4),
             }
         )

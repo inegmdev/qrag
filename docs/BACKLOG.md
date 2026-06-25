@@ -8,7 +8,7 @@ When starting a new session, review this file and prefer working on higher-sever
 
 ## Critical — Broken or Data-Loss Risk
 
-- [ ] **C0** `chunker.py`, `pyproject.toml` — Only C and C++ are supported. Extend to all tree-sitter-supported languages so any codebase can be indexed. Work: (1) add grammar packages to `pyproject.toml` (`tree-sitter-rust`, `tree-sitter-javascript`, `tree-sitter-java`, `tree-sitter-python`, `tree-sitter-go`, `tree-sitter-typescript`, etc.); (2) build a `LANGUAGE_MAP` in `chunker.py` keyed by file extension — node-type names differ per grammar (Rust: `function_item`/`struct_item`, JS: `function_declaration`/`class_declaration`); (3) generalise `_extract_chunks()`; (4) update file-extension filter in `cli.py`; (5) add `--languages` flag on `prepare` so users opt-in rather than pulling every grammar into the wheel.
+- [x] **C0** `chunker.py`, `pyproject.toml`, `database.py`, `cli.py` — Only C and C++ were supported. Fixed in PR #12: replaced individual `tree-sitter-c`/`tree-sitter-cpp` deps with `tree-sitter-language-pack` (305+ grammars); rewrote `chunker.py` with a `_EXT_REGISTRY`/`_FILENAME_REGISTRY`-driven rule engine; chunk_type is now language-agnostic (function/class/struct/interface/enum/macro/type_alias/module/constant); added `language` column to `code_chunks` and `symbols` with auto-migration; `_detect_input_type()` now derives extensions from the registry; build system files (CMakeLists.txt, Makefile, Cargo.toml, package.json, go.mod, pom.xml, conanfile.py, *.cmake, *.gradle, *.toml, etc.) are indexed as first-class code alongside source files.
 
 - [x] **C1** `mcp_server.py:226-229` — All exceptions silently swallowed with `continue`. Fixed in PR #11: `JSONDecodeError` → `-32700` response + log; unhandled `Exception` → `-32603` response + full traceback logged to `~/.qrag/logs/mcp_errors.log`; `KeyboardInterrupt`/`SystemExit` → clean exit 0; fatal loop crash → log + exit 1.
 
@@ -19,6 +19,8 @@ When starting a new session, review this file and prefer working on higher-sever
 ---
 
 ## High — Likely User-Facing Failures
+
+- [ ] **H0** `chunker.py`, `database.py` — Build-source relationship metadata: currently build system files (CMakeLists.txt, Cargo.toml, etc.) are indexed as isolated chunks. Phase 2 should enrich `code_chunks` with relational metadata — e.g. which source files belong to which cmake target/cargo bin/gradle task — so that RAG queries like "what files are compiled into the `my_app` executable?" return structured answers. Work: (1) add a `build_target` TEXT column to `code_chunks`; (2) parse cmake `add_executable`/`add_library` arguments to extract the source file list and back-link those source chunks to the target name; (3) do the same for Cargo `[[bin]]`→`src`, Gradle `sourceSets`, Maven `<module>` etc.; (4) expose `build_target` in `search_code` results so the AI agent can filter by target. Depends on C0.
 
 - [ ] **H1** `database.py:249,378` — `feature_tags` stored as comma-CSV but split naively. Tags containing commas cause silent misalignment in search results.
 
@@ -55,6 +57,8 @@ When starting a new session, review this file and prefer working on higher-sever
 ---
 
 ## Low — Nice-to-Have
+
+- [ ] **L8** `chunker.py` — Shebang/content sniffing for extensionless scripts (e.g. `#!/usr/bin/env python`). Currently only extension and filename matching is used. Extensionless executable scripts in a project would be silently skipped.
 
 
 
