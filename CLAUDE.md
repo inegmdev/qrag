@@ -8,8 +8,9 @@
 
 1. Read `MEMORY.md` — product overview, architecture, design decisions, current git/PR state.
 2. Read `docs/BACKLOG.md` — full prioritized bug and improvement list with exact file/line references.
-3. Run `git log --oneline -10` mentally or explicitly to understand recent commits.
-4. Unless the user directs otherwise, prefer working on **Critical → High → Medium → Low** backlog items.
+3. Read `docs/ARCHITECTURE.md` — all architectural decisions with visualizations.
+4. Run `git log --oneline -10` mentally or explicitly to understand recent commits.
+5. Unless the user directs otherwise, prefer working on **Critical → High → Medium → Low** backlog items.
 
 ---
 
@@ -96,6 +97,20 @@ After opening a PR:
 
 ---
 
+## Architecture Documentation — MANDATORY
+
+**Whenever a design decision is made or an architectural component changes:**
+
+1. Open `docs/ARCHITECTURE.md`.
+2. Add or update the relevant section with:
+   - A short **Decision** statement and **Why** rationale.
+   - A **Mermaid diagram** (` ```mermaid `) visualizing the flow, data layout, or component relationships. Never use ASCII art — always use Mermaid syntax.
+   - A **Trade-off** note if applicable.
+3. Assign the section an `AD-N` identifier (next available number).
+4. Commit the update alongside the code change — never let code and architecture docs drift apart.
+
+---
+
 ## End-of-Session Checklist
 
 Before closing any session where meaningful work happened:
@@ -103,4 +118,5 @@ Before closing any session where meaningful work happened:
 1. Mark resolved backlog items `[x]` in `docs/BACKLOG.md`.
 2. Add any newly discovered issues to `docs/BACKLOG.md`.
 3. Update `MEMORY.md` if: architecture changed, a design decision was made, PR/branch state changed, or product scope shifted.
-4. Commit and push all changes.
+4. Update `docs/ARCHITECTURE.md` if any architectural decision was made or changed.
+5. Commit and push all changes.
