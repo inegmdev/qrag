@@ -3,13 +3,32 @@
 Implements the Model Context Protocol over JSON-RPC / stdio.
 """
 
+import datetime
 import json
 import sys
+import traceback
 from pathlib import Path
 
 from .config import load_global, CACHE_DIR
 from .database import search_code as db_search_code, search_docs as db_search_docs, get_symbol as db_get_symbol, list_symbols as db_list_symbols
 from .embedder import embed_one
+
+_LOG_DIR = Path.home() / ".qrag" / "logs"
+
+
+def _log_error(message: str) -> None:
+    """Append an error entry to ~/.qrag/logs/mcp_errors.log (never raises)."""
+    try:
+        _LOG_DIR.mkdir(parents=True, exist_ok=True)
+        ts = datetime.datetime.now().isoformat(timespec="seconds")
+        with open(_LOG_DIR / "mcp_errors.log", "a", encoding="utf-8") as f:
+            f.write(f"[{ts}] {message}\n")
+    except Exception:
+        pass
+
+
+def _error_response(req_id, code: int, message: str) -> dict:
+    return {"jsonrpc": "2.0", "id": req_id, "error": {"code": code, "message": message}}
 
 
 def _ensure_active_version() -> tuple[Path, Path]:
@@ -215,18 +234,35 @@ def handle_request(request: dict) -> dict:
 
 def run():
     """Entry point for the MCP server - reads JSON-RPC from stdin, writes to stdout."""
-    for line in sys.stdin:
-        try:
-            request = json.loads(line.strip())
-            response = handle_request(request)
-            # Only respond if this is not a notification (has an id)
-            if request.get("id") is not None:
-                print(json.dumps(response))
-                sys.stdout.flush()
-        except json.JSONDecodeError:
-            continue
-        except Exception as e:
-            continue
+    try:
+        for line in sys.stdin:
+            line = line.strip()
+            if not line:
+                continue
+
+            req_id = None
+            try:
+                request = json.loads(line)
+                req_id = request.get("id")
+                response = handle_request(request)
+                if req_id is not None:
+                    print(json.dumps(response))
+                    sys.stdout.flush()
+            except json.JSONDecodeError as e:
+                _log_error(f"Parse error on line: {line!r} — {e}")
+                if req_id is not None:
+                    print(json.dumps(_error_response(req_id, -32700, "Parse error: invalid JSON")))
+                    sys.stdout.flush()
+            except Exception as e:
+                _log_error(f"Unhandled exception (id={req_id}): {traceback.format_exc()}")
+                if req_id is not None:
+                    print(json.dumps(_error_response(req_id, -32603, f"Internal error: {e}")))
+                    sys.stdout.flush()
+    except (KeyboardInterrupt, SystemExit):
+        sys.exit(0)
+    except Exception:
+        _log_error(f"Fatal loop error: {traceback.format_exc()}")
+        sys.exit(1)
 
 
 if __name__ == "__main__":
