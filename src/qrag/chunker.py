@@ -21,6 +21,9 @@ class CodeChunk:
     code_text: str
     chunk_type: str   # function | class | struct | interface | enum | macro | type_alias | module | constant
     language: str     # canonical language name, e.g. "c", "rust", "cmake"
+    parent_name: str = ""   # enclosing function/class/namespace name, empty if top-level
+    call_depth: int = 0     # 0 = top-level, 1+ = nested inside a recursible block
+    chunk_index: int = 0    # 0 for unsplit chunks; 0,1,2,… for sub-chunks of large symbols
 
 
 @dataclass
@@ -562,6 +565,9 @@ def _split_large_chunk(chunk: CodeChunk) -> list[CodeChunk]:
             code_text=text,
             chunk_type=chunk.chunk_type,
             language=chunk.language,
+            parent_name=chunk.parent_name,
+            call_depth=chunk.call_depth,
+            chunk_index=idx,
         ))
         idx += 1
         if j >= len(lines):
@@ -590,7 +596,7 @@ def _extract_chunks(source: bytes, file_path: str, lang: _LangConfig) -> list[Co
         for nt in rule.node_types:
             type_to_rule[nt] = rule
 
-    def visit(node):
+    def visit(node, depth: int = 0, parent_name: str = "") -> None:
         rule = type_to_rule.get(node.type)
         if rule is not None:
             name = rule.extract_name(node)
@@ -605,6 +611,9 @@ def _extract_chunks(source: bytes, file_path: str, lang: _LangConfig) -> list[Co
                     code_text=text,
                     chunk_type=rule.chunk_type,
                     language=lang.name,
+                    parent_name=parent_name,
+                    call_depth=depth,
+                    chunk_index=0,
                 )
                 if _token_count(text) > MAX_TOKENS:
                     chunks.extend(_split_large_chunk(chunk))
@@ -612,8 +621,11 @@ def _extract_chunks(source: bytes, file_path: str, lang: _LangConfig) -> list[Co
                     chunks.append(chunk)
                 if not rule.recurse:
                     return
+                for child in node.children:
+                    visit(child, depth + 1, name)
+                return
         for child in node.children:
-            visit(child)
+            visit(child, depth, parent_name)
 
     visit(tree.root_node)
     return chunks

@@ -220,7 +220,60 @@ flowchart TD
     LANG --> PARSER["tree-sitter-language-pack\nget_parser(ts_name)"]
     PARSER --> AST["Parse tree\nAST node traversal"]
     AST --> RULE["_Rule\n{ node_types → chunk_type\n  extract_name callable }"]
-    RULE --> CHUNK["CodeChunk\n{ symbol_name, chunk_type, language\n  file_path, line_start, line_end\n  code_text }"]
-    CHUNK -->|"large chunk"| SPLIT["auto-split with\noverlap (512 tok max)"]
+    RULE --> CHUNK["CodeChunk\n{ symbol_name, chunk_type, language\n  file_path, file_name, line_start, line_end\n  code_text, parent_name, call_depth, chunk_index=0 }"]
+    CHUNK -->|"large chunk"| SPLIT["auto-split with\noverlap (512 tok max)\nchunk_index=0,1,2,…"]
     CHUNK & SPLIT --> OUT["insert into code_chunks + symbols"]
 ```
+
+---
+
+## AD-6: Rich Code Metadata — IS5
+
+**Decision:** `code_chunks` gains four new columns: `file_name` (basename), `parent_name`
+(enclosing block), `call_depth` (nesting level), `chunk_index` (sub-chunk index within
+a split symbol). Existing DBs are auto-migrated via `ALTER TABLE` on open.
+
+**Why:** The AI agent needs precise citation (file + line range), structural context
+(what class/namespace owns this function), and sub-chunk tracking (which slice of a
+large function it is looking at) to answer questions accurately.
+
+```mermaid
+flowchart TD
+    ROOT["AST root\ndepth=0, parent=''"]
+    ROOT -->|"rule.recurse=True\nname='MyClass'"| CLASS["CodeChunk\nsymbol_name='MyClass'\ncall_depth=0\nparent_name=''"]
+    CLASS -->|"recurse children\ndepth=1, parent='MyClass'"| METHOD["CodeChunk\nsymbol_name='my_method'\ncall_depth=1\nparent_name='MyClass'"]
+    ROOT -->|"rule.recurse=False\nname='free_fn'"| FREE["CodeChunk\nsymbol_name='free_fn'\ncall_depth=0\nparent_name=''"]
+    FREE -->|"> 512 tokens"| SPLIT["sub-chunks\nfree_fn#0, free_fn#1, …\nchunk_index=0,1,…"]
+```
+
+**Schema migration:** `_open_code()` runs `ALTER TABLE code_chunks ADD COLUMN …` for
+each new column on every open; `sqlite3.OperationalError` is swallowed when the column
+already exists. `init_code_db` includes all columns in `CREATE TABLE IF NOT EXISTS`.
+
+---
+
+## AD-7: Rich Doc Metadata — IS4
+
+**Decision:** `doc_sections` gains five new columns: `doc_name`, `doc_revision`,
+`doc_status`, `word_count`, `fig_table_refs`. Extracted at parse time from the filename
+and section content. Existing DBs are auto-migrated on open via `_open_docs()`.
+
+**Why:** LLMs need to cite documents precisely (which document, which revision, which
+status). Figure/table references let the agent locate companion material. Word count
+helps the agent judge whether content has been truncated.
+
+```mermaid
+flowchart LR
+    FILE["PDF / HTML file\n'STM32F4_RM_rev3_draft.pdf'"]
+    FILE -->|"path.stem"| META["doc_name = 'STM32F4_RM_rev3_draft.pdf'\ndoc_revision = '3'  (_REV_RE)\ndoc_status = 'draft'  (_STATUS_KEYWORDS)"]
+    FILE -->|"parse content"| CONTENT["section content text"]
+    CONTENT -->|"_extract_fig_table_refs"| REFS["fig_table_refs = 'Figure 3-1,Table 4-2'"]
+    CONTENT -->|"len(split)"| WC["word_count = N"]
+    META & REFS & WC --> DB[("doc_sections row")]
+```
+
+**Revision extraction:** `_REV_RE = r'[_\\-\\s](?:rev?|ver?|version)\\.?\\s*(\\d+[.\\d]*)'`
+matches `_rev3`, `_v2`, `_Rev1.2` etc. from the filename stem.
+
+**Status extraction:** first match of `released | approved | final | review | draft | obsolete`
+in the lowercased filename stem. Empty string if none matched.
