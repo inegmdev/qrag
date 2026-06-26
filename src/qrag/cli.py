@@ -135,8 +135,8 @@ Given: $ARGUMENTS (your question or topic)
 7. **Conclude**: Synthesize all findings into a clear answer. Cite source file paths, symbol names, doc sections, and page numbers. Flag any inconsistencies between docs and code.
 
 ## Available MCP tools
-- `search_code(query, top_k)` — semantic search over indexed code symbols
-- `search_docs(query, top_k)` — semantic search over indexed documentation
+- `search_code(query)` — semantic search over indexed code symbols (returns top 10)
+- `search_docs(query)` — semantic search over indexed documentation (returns top 10)
 - `list_symbols(pattern)` — list code symbols matching a glob pattern
 - `get_symbol(name)` — retrieve full source of a specific symbol
 """
