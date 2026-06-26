@@ -43,7 +43,7 @@ All four MCP tools fan-out across every active DB in parallel, merge results by
 score, and deduplicate before returning to the AI agent.
 
 **Why:** Teams work with multiple SDKs, RTOSes, and doc sets simultaneously.
-Requiring a merged re-prepare for each new source is prohibitive. Pre-built DBs
+Requiring a merged re-build for each new source is prohibitive. Pre-built DBs
 downloaded independently must be queryable together without rebuilding.
 
 ### Config Migration
@@ -107,8 +107,8 @@ qrag ai active sdk-v1 rtos-v2 trm-v3
 # Show current active versions
 qrag ai active
 
-# prepare and hub download auto-add to the list
-qrag prepare -i /path/to/code -o sdk-v1      # → active_versions gains "sdk-v1"
+# build and hub download auto-add to the list
+qrag build -i /path/to/code -o sdk-v1      # → active_versions gains "sdk-v1"
 qrag hub download rtos-v2                    # → active_versions gains "rtos-v2"
 ```
 
@@ -143,11 +143,11 @@ flowchart LR
     end
 
     BASE --> CONSUMER["Consumer\ndownload + MCP search"]
-    BASE & BUILD --> BUILDER["Builder\nqrag prepare"]
+    BASE & BUILD --> BUILDER["Builder\nqrag build"]
     BASE & BUILD & GPU --> FULL["Full\nqrag[full]"]
 ```
 
-**Guard in `prepare()`:** `_ensure_build_deps()` probes `tree_sitter`, `fitz`,
+**Guard in `build()`:** `_ensure_build_deps()` probes `tree_sitter`, `fitz`,
 `tree_sitter_language_pack` → prints reinstall instructions and exits 1 if missing.
 
 ---

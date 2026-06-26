@@ -10,9 +10,9 @@ When starting a new session, review this file and prefer working on higher-sever
 
 > **IS1–IS5 are user-declared top priorities**. Work on these before any other open item.
 
-- [ ] **IS1** `cli.py`, `embedder.py` — TUI is plain echo/print with no visual structure. Modernize `qrag prepare` (and all long-running commands) with rich progress bars (per-file chunking, per-batch embedding, per-batch DB write), live ETA, elapsed time display, and a final summary line. Recommended library: `rich` (already a transitive dep via sentence-transformers — check before adding). Each pipeline stage (scan → chunk → embed → store) should have its own progress bar so the user always knows where the bottleneck is.
+- [ ] **IS1** `cli.py`, `embedder.py` — TUI is plain echo/print with no visual structure. Modernize `qrag build` (and all long-running commands) with rich progress bars (per-file chunking, per-batch embedding, per-batch DB write), live ETA, elapsed time display, and a final summary line. Recommended library: `rich` (already a transitive dep via sentence-transformers — check before adding). Each pipeline stage (scan → chunk → embed → store) should have its own progress bar so the user always knows where the bottleneck is.
 
-- [ ] **IS2** `cli.py` — No post-prepare audit report. After `qrag prepare` completes, write a human-readable report to `<output>/prepare-report.txt` (and print a summary to stdout) containing: list of every file processed, its detected language, number of chunks produced, time taken per file; aggregate stats per language; total wall-clock time; list of files skipped (unsupported extension, parse error, zero chunks); DB sizes. This lets the user verify what entered the database and what was silently dropped.
+- [ ] **IS2** `cli.py` — No post-prepare audit report. After `qrag build` completes, write a human-readable report to `<output>/prepare-report.txt` (and print a summary to stdout) containing: list of every file processed, its detected language, number of chunks produced, time taken per file; aggregate stats per language; total wall-clock time; list of files skipped (unsupported extension, parse error, zero chunks); DB sizes. This lets the user verify what entered the database and what was silently dropped.
 
 - [x] **IS3** `database.py`, `mcp_server.py`, `cli.py` — Only one active database at a time. Fixed in PR #16: `active_version` (str) → `active_versions` (list) with auto-migration; `qrag ai active [v1 v2 …]` replaces the list; all MCP tools fan-out across active DBs via ThreadPoolExecutor, merge by score, dedup. `config.py` gains `add_active_version()`, `code_db_paths()`, `docs_db_paths()`.
 
@@ -24,7 +24,7 @@ When starting a new session, review this file and prefer working on higher-sever
 
 - [x] **C1** `mcp_server.py:226-229` — All exceptions silently swallowed with `continue`. Fixed in PR #11: `JSONDecodeError` → `-32700` response + log; unhandled `Exception` → `-32603` response + full traceback logged to `~/.qrag/logs/mcp_errors.log`; `KeyboardInterrupt`/`SystemExit` → clean exit 0; fatal loop crash → log + exit 1.
 
-- [ ] **C2** `cli.py:543,547` — `db_path`/`ddb_path` can be `None` in code-only or docs-only `prepare` runs, causing a `TypeError` crash. Single-type indexing is a documented use case.
+- [ ] **C2** `cli.py:543,547` — `db_path`/`ddb_path` can be `None` in code-only or docs-only `build` runs, causing a `TypeError` crash. Single-type indexing is a documented use case.
 
 - [ ] **C3** `database.py` (multiple functions) — DB connections opened without `try/finally`. Any exception leaves the connection open; repeated failures exhaust OS file descriptors.
 
@@ -38,15 +38,15 @@ When starting a new session, review this file and prefer working on higher-sever
 
 - [ ] **H2** `database.py:350-422` — No validation that query embedding dimension matches `EMBEDDING_DIM=384`. A misconfigured model silently returns garbage search results.
 
-- [ ] **H3** `cli.py:436-440` — Producer exceptions are caught and appended to an errors list, but `prepare` still exits with code `0` and reports success. A corrupted or incomplete database looks valid.
+- [ ] **H3** `cli.py:436-440` — Producer exceptions are caught and appended to an errors list, but `build` still exits with code `0` and reports success. A corrupted or incomplete database looks valid.
 
-- [ ] **H4** `cli.py:525` — If a producer thread dies without emitting a sentinel, `queue.get()` busy-loops indefinitely. The `prepare` command hangs forever with no error.
+- [ ] **H4** `cli.py:525` — If a producer thread dies without emitting a sentinel, `queue.get()` busy-loops indefinitely. The `build` command hangs forever with no error.
 
 - [ ] **H5** `chunker.py:50` — Sub-chunk names (`func#0`, `func#1`) can collide with real symbol names. `INSERT OR REPLACE` silently overwrites the correct symbol entry.
 
 - [ ] **H6** `config.py:29-31` — Malformed `~/.qrag/config.json` raises an uncaught `JSONDecodeError`, breaking every qrag command until the file is manually deleted.
 
-- [x] **GH#13** — Optimize Dependencies: Consumer vs. Builder Roles with Role-Based Installation. Split `pyproject.toml` into `dependencies` (consumer: click, sqlite-vec only) and `[project.optional-dependencies]` build/build.gpu/full groups; add `_ensure_builder_deps()` lazy-check in `prepare` command that detects GPU and prints actionable install instructions per package manager. [GitHub](https://github.com/inegmdev/qrag/issues/13)
+- [x] **GH#13** — Optimize Dependencies: Consumer vs. Builder Roles with Role-Based Installation. Split `pyproject.toml` into `dependencies` (consumer: click, sqlite-vec only) and `[project.optional-dependencies]` build/build.gpu/full groups; add `_ensure_builder_deps()` lazy-check in `build` command that detects GPU and prints actionable install instructions per package manager. [GitHub](https://github.com/inegmdev/qrag/issues/13)
 
 - [x] **H7** `cli.py:main()` — Restructured to never re-raise. `KeyboardInterrupt`/`Abort` → "Interrupted." + exit 130. `BaseException` → "Error: <message>" + exit 1. Raw tracebacks no longer reach the terminal; full trace still written to `~/.qrag/logs/`.
 
@@ -78,7 +78,7 @@ When starting a new session, review this file and prefer working on higher-sever
 
 - [ ] **L1** `cli.py:851-904` — No deduplication when a result appears in both code and docs search output.
 
-- [ ] **L2** `cli.py` — No `--dry-run` mode for `prepare` to preview what would be indexed without building the database.
+- [ ] **L2** `cli.py` — No `--dry-run` mode for `build` to preview what would be indexed without building the database.
 
 - [ ] **L3** `cli.py:936`, `database.py:376,417` — Snippets truncated without a `...` indicator; users don't know they're seeing partial content.
 
@@ -88,4 +88,4 @@ When starting a new session, review this file and prefer working on higher-sever
 
 - [ ] **L6** `cli.py:917,951,985` — Error messages reference `qrag mcp active` but the correct command is `qrag ai active`.
 
-- [ ] **L7** `database.py` — No debug-level logging emitted under `--verbose` for database operations; makes slow or failing `prepare` runs hard to diagnose.
+- [ ] **L7** `database.py` — No debug-level logging emitted under `--verbose` for database operations; makes slow or failing `build` runs hard to diagnose.

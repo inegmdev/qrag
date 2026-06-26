@@ -19,7 +19,7 @@
 **qrag** is a Python CLI + MCP server that builds semantic RAG databases from C/C++ source code and technical documentation (PDFs, HTML). It is designed for embedded-systems teams working with large vendor SDKs and TRMs.
 
 **Key workflow:**
-- A "database preparer" runs `qrag prepare` once to parse, embed, and store code/docs into SQLite databases.
+- A "database preparer" runs `qrag build` once to parse, embed, and store code/docs into SQLite databases.
 - The whole team downloads those pre-built databases via `qrag hub download`.
 - Each developer runs `qrag ai setup` to wire the MCP server into their AI agent (Claude or Gemini CLI).
 - The AI agent then calls four MCP tools: `search_code`, `search_docs`, `get_symbol_definition`, `list_symbols`.
@@ -69,10 +69,10 @@ Whenever the user asks about the backlog, what's next, or what issues exist:
 | ID | File:Line | Summary |
 |----|-----------|---------|
 | **C1** | `mcp_server.py:226-229` | All exceptions silently swallowed — server appears running but isn't |
-| **C2** | `cli.py:543,547` | `db_path`/`ddb_path` can be `None` in code-only or docs-only `prepare` → `TypeError` |
+| **C2** | `cli.py:543,547` | `db_path`/`ddb_path` can be `None` in code-only or docs-only `build` → `TypeError` |
 | **C3** | `database.py` (multiple) | DB connections not closed on exception → file descriptor exhaustion |
-| **H3** | `cli.py:436-440` | `prepare` exits 0 even when producers error — corrupt DB looks valid |
-| **H4** | `cli.py:525` | Producer thread death without sentinel → `prepare` hangs forever |
+| **H3** | `cli.py:436-440` | `build` exits 0 even when producers error — corrupt DB looks valid |
+| **H4** | `cli.py:525` | Producer thread death without sentinel → `build` hangs forever |
 | **H6** | `config.py:29-31` | `JSONDecodeError` on malformed config breaks every qrag command |
 
 ---
