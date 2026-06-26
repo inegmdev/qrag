@@ -12,8 +12,10 @@ import time
 import traceback
 from collections import deque
 from concurrent.futures import ProcessPoolExecutor, as_completed
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Iterator
 
 import click
 
@@ -49,6 +51,18 @@ _logger.addHandler(_buf_handler)
 _logger.setLevel(_logging.DEBUG)
 
 _verbose = False
+
+
+@contextmanager
+def _spinner(msg: str) -> Iterator[None]:
+    """Show a Rich spinner if Rich is installed; no-op otherwise."""
+    try:
+        from rich.console import Console
+        from rich.status import Status
+        with Status(msg, console=Console(stderr=True), spinner="dots"):
+            yield
+    except ImportError:
+        yield
 
 
 def _log_dir() -> Path:
@@ -661,6 +675,7 @@ _QUEUE_MAXSIZE = 4096
 _CHECKPOINT_SIZE = 1000
 _KIND_CODE = "code"
 _KIND_DOC = "doc"
+_KIND_ERROR = "error"
 
 
 def _run_code_producer(
@@ -681,6 +696,7 @@ def _run_code_producer(
                 q.put((_KIND_CODE, chunks, elapsed, root, rel))
             except Exception as e:
                 errors.append((str(Path(root) / rel), str(e)))
+                q.put((_KIND_ERROR, str(e), 0.0, root, rel))
     q.put(None)  # sentinel
 
 
@@ -702,6 +718,7 @@ def _run_doc_producer(
                 q.put((_KIND_DOC, sections, elapsed, root, rel))
             except Exception as e:
                 errors.append((str(Path(root) / rel), str(e)))
+                q.put((_KIND_ERROR, str(e), 0.0, root, rel))
     q.put(None)  # sentinel
 
 
@@ -750,15 +767,13 @@ def _consume_and_embed(
     precision: str,
     batch_size: int,
     *,
-    progress=None,
-    overall_task=None,
-    parse_task=None,
-    embed_task=None,
+    layout=None,
     total_files: int = 0,
 ) -> tuple[int, int, set, set, list]:
     """Drain the producer queue, embed, and write to DB with periodic checkpointing.
 
     Returns (code_stored, docs_stored, successful_code, successful_docs, file_records).
+    layout is a BuildLayout instance (or None in --verbose mode).
     """
     pending_code: list = []
     pending_doc: list = []
@@ -768,36 +783,14 @@ def _consume_and_embed(
     docs_stored = 0
     sentinels_seen = 0
     file_records: list[_FileRecord] = []
-    files_parsed = 0
     chunks_embedded = 0
-    _embed_batches: deque = deque(maxlen=20)  # (batch_len, elapsed) rolling window
 
-    def _upd_overall() -> None:
-        if progress is None or overall_task is None:
-            return
-        avg_ch = sum(r.chunks for r in file_records) / max(1, len(file_records))
-        est_files_embedded = chunks_embedded / max(1.0, avg_ch)
-        progress.update(overall_task, completed=int(files_parsed + min(est_files_embedded, total_files)))
-
-    def _upd_embed(batch_len: int, elapsed_batch: float) -> None:
+    def _emit_embed(n: int, elapsed: float) -> None:
         nonlocal chunks_embedded
-        chunks_embedded += batch_len
-        _embed_batches.append((batch_len, elapsed_batch))
-        if progress is None or embed_task is None:
-            return
-        # Adaptive total: re-estimate from avg chunks/file seen so far
-        if total_files > 0 and file_records:
-            avg_ch = sum(r.chunks for r in file_records) / len(file_records)
-            est_total = max(chunks_embedded, int(avg_ch * total_files))
-            progress.update(embed_task, completed=chunks_embedded, total=est_total)
-        else:
-            progress.update(embed_task, advance=batch_len)
-        # Rolling throughput over recent batches
-        total_ch = sum(b[0] for b in _embed_batches)
-        total_t = sum(b[1] for b in _embed_batches)
-        throughput = total_ch / max(1e-6, total_t)
-        progress.update(embed_task, detail=f"{chunks_embedded:,} chunks • {throughput:,.0f}/s")
-        _upd_overall()
+        chunks_embedded += n
+        if layout is not None:
+            avg_ch = sum(r.chunks for r in file_records) / max(1, len(file_records))
+            layout.on_embed_batch(n, elapsed, chunks_embedded, avg_ch)
 
     while sentinels_seen < num_producers:
         try:
@@ -809,57 +802,66 @@ def _consume_and_embed(
             sentinels_seen += 1
             continue
 
-        kind, items, elapsed, root, rel = item
+        kind, payload, elapsed, root, rel = item
         abs_path = str(Path(root) / rel)
 
+        if kind == _KIND_ERROR:
+            if layout is not None:
+                layout.on_error(abs_path, root, payload)
+            continue
+
+        skipped = not payload
+        skip_reason = "zero_chunks" if skipped else ""
+
         if kind == _KIND_CODE:
-            pending_code.extend(items)
+            pending_code.extend(payload)
             successful_code.add((root, rel))
-            lang = items[0].language if items else "unknown"
-            file_records.append(_FileRecord(
+            lang = payload[0].language if payload else "unknown"
+            fr = _FileRecord(
                 path=abs_path, kind="code", language=lang,
-                chunks=len(items), elapsed=elapsed,
-                skipped=len(items) == 0,
-                skip_reason="zero_chunks" if not items else "",
-            ))
+                chunks=len(payload), elapsed=elapsed,
+                skipped=skipped, skip_reason=skip_reason,
+            )
         else:
-            pending_doc.extend(items)
+            pending_doc.extend(payload)
             successful_docs.add((root, rel))
             ext = Path(rel).suffix.lower().lstrip(".")
             lang = ext if ext in ("pdf", "html", "htm") else "doc"
-            file_records.append(_FileRecord(
+            fr = _FileRecord(
                 path=abs_path, kind="doc", language=lang,
-                chunks=len(items), elapsed=elapsed,
-                skipped=len(items) == 0,
-                skip_reason="zero_chunks" if not items else "",
-            ))
+                chunks=len(payload), elapsed=elapsed,
+                skipped=skipped, skip_reason=skip_reason,
+            )
 
-        files_parsed += 1
-        if progress is not None and parse_task is not None:
-            progress.update(parse_task, advance=1, detail=f"{files_parsed}/{total_files} files")
-        _upd_overall()
+        file_records.append(fr)
+        if layout is not None:
+            layout.on_file_parsed(abs_path, root, fr.chunks, elapsed, skipped, skip_reason)
 
         if len(pending_code) >= _CHECKPOINT_SIZE:
             batch, pending_code = pending_code[:_CHECKPOINT_SIZE], pending_code[_CHECKPOINT_SIZE:]
             t0 = time.monotonic()
-            code_stored += _flush_code_batch(batch, db_path, device, precision, batch_size)
-            _upd_embed(len(batch), time.monotonic() - t0)
+            n = _flush_code_batch(batch, db_path, device, precision, batch_size)
+            code_stored += n
+            _emit_embed(n, time.monotonic() - t0)
 
         if len(pending_doc) >= _CHECKPOINT_SIZE:
             batch, pending_doc = pending_doc[:_CHECKPOINT_SIZE], pending_doc[_CHECKPOINT_SIZE:]
             t0 = time.monotonic()
-            docs_stored += _flush_doc_batch(batch, ddb_path, device, precision, batch_size)
-            _upd_embed(len(batch), time.monotonic() - t0)
+            n = _flush_doc_batch(batch, ddb_path, device, precision, batch_size)
+            docs_stored += n
+            _emit_embed(n, time.monotonic() - t0)
 
     # Drain remainders
     if pending_code:
         t0 = time.monotonic()
-        code_stored += _flush_code_batch(pending_code, db_path, device, precision, batch_size)
-        _upd_embed(len(pending_code), time.monotonic() - t0)
+        n = _flush_code_batch(pending_code, db_path, device, precision, batch_size)
+        code_stored += n
+        _emit_embed(n, time.monotonic() - t0)
     if pending_doc:
         t0 = time.monotonic()
-        docs_stored += _flush_doc_batch(pending_doc, ddb_path, device, precision, batch_size)
-        _upd_embed(len(pending_doc), time.monotonic() - t0)
+        n = _flush_doc_batch(pending_doc, ddb_path, device, precision, batch_size)
+        docs_stored += n
+        _emit_embed(n, time.monotonic() - t0)
 
     return code_stored, docs_stored, successful_code, successful_docs, file_records
 
@@ -1169,10 +1171,21 @@ def build(input_dirs: tuple[Path, ...], output: str, device: str, limit_cpu: int
         producer_errors: list[tuple[str, str]] = []
         threads = []
 
+        # Proportional CPU split — avoids over-subscribing with 2× cpu_count processes
+        _total_workers = limit_cpu or os.cpu_count() or 1
+        if to_process and to_process_docs:
+            _code_ratio = len(to_process) / (len(to_process) + len(to_process_docs))
+            code_workers = max(1, round(_total_workers * _code_ratio))
+            doc_workers = max(1, _total_workers - code_workers)
+        elif to_process:
+            code_workers, doc_workers = _total_workers, 0
+        else:
+            code_workers, doc_workers = 0, _total_workers
+
         if to_process:
             t = threading.Thread(
                 target=_run_code_producer,
-                args=(to_process, limit_cpu, q, producer_errors),
+                args=(to_process, code_workers, q, producer_errors),
                 daemon=True,
             )
             t.start()
@@ -1181,53 +1194,30 @@ def build(input_dirs: tuple[Path, ...], output: str, device: str, limit_cpu: int
         if to_process_docs:
             t = threading.Thread(
                 target=_run_doc_producer,
-                args=(to_process_docs, limit_cpu, q, producer_errors),
+                args=(to_process_docs, doc_workers, q, producer_errors),
                 daemon=True,
             )
             t.start()
             threads.append(t)
 
         if not _verbose:
-            from rich.progress import (
-                BarColumn, Progress, SpinnerColumn,
-                TextColumn, TimeElapsedColumn, TimeRemainingColumn,
-            )
-            progress = Progress(
-                SpinnerColumn(),
-                TextColumn("[bold]{task.description}"),
-                BarColumn(bar_width=35),
-                TextColumn("[dim]{task.fields[detail]}[/dim]"),
-                TextColumn("•"),
-                TimeElapsedColumn(),
-                TextColumn("•"),
-                TimeRemainingColumn(),
-                transient=True,
-            )
-            with progress:
-                overall_task = progress.add_task(
-                    "Overall", total=total_files * 2, detail="",
-                )
-                parse_task = progress.add_task(
-                    "  Parse ", total=total_files, detail=f"0/{total_files} files",
-                )
-                embed_task = progress.add_task(
-                    "  Embed ", total=None, detail="waiting…",
-                )
+            from .tui import BuildLayout
+            with BuildLayout(total_files, out_dir, code_workers, doc_workers) as layout:
                 code_stored, docs_stored, successful_code, successful_docs, file_records = _consume_and_embed(
                     q, num_producers, db_path, ddb_path, resolved_device, precision, batch_size,
-                    progress=progress, overall_task=overall_task,
-                    parse_task=parse_task, embed_task=embed_task,
-                    total_files=total_files,
+                    layout=layout, total_files=total_files,
                 )
                 for t in threads:
                     t.join()
         else:
             click.echo(
                 f"[build] parsing {len(to_process)} code file(s) + "
-                f"{len(to_process_docs)} doc file(s) concurrently..."
+                f"{len(to_process_docs)} doc file(s) concurrently "
+                f"(code_workers={code_workers}, doc_workers={doc_workers})..."
             )
             code_stored, docs_stored, successful_code, successful_docs, file_records = _consume_and_embed(
                 q, num_producers, db_path, ddb_path, resolved_device, precision, batch_size,
+                layout=None, total_files=total_files,
             )
             for t in threads:
                 t.join()
@@ -1333,7 +1323,8 @@ def search(ctx, top_k: int):
     from .embedder import embed_one
 
     found_any = False
-    q_emb = embed_one(query)
+    with _spinner("Searching…"):
+        q_emb = embed_one(query)
 
     # Try exact symbol match first across all active code DBs
     for code_db in code_db_paths():
@@ -1418,7 +1409,8 @@ def search_code(query: str, top_k: int):
         click.echo("No active code databases. Run `qrag ai active <version>` first.", err=True)
         sys.exit(1)
 
-    q_emb = embed_one(query)
+    with _spinner("Searching…"):
+        q_emb = embed_one(query)
     all_results: list[dict] = []
     for db in dbs:
         _logger.debug("search-code: query=%r top_k=%d db=%s", query, top_k, db)
@@ -1463,7 +1455,8 @@ def search_docs(query: str, top_k: int):
         click.echo("No active docs databases. Run `qrag ai active <version>` first.", err=True)
         sys.exit(1)
 
-    q_emb = embed_one(query)
+    with _spinner("Searching…"):
+        q_emb = embed_one(query)
     all_results: list[dict] = []
     for db in dbs:
         _logger.debug("search-docs: query=%r top_k=%d db=%s", query, top_k, db)
@@ -1555,7 +1548,8 @@ def hub_download(version: str):
         sys.exit(1)
 
     from .github_distribution import download_database
-    download_database(url, version, CACHE_DIR)
+    with _spinner(f"Downloading '{version}'…"):
+        download_database(url, version, CACHE_DIR)
 
     add_active_version(version)
     click.echo(f"Version '{version}' added to active versions.")
@@ -1577,7 +1571,8 @@ def hub_push(version: str, force: bool):
         sys.exit(1)
 
     from .github_distribution import push_to_github
-    push_to_github(url, version, version_dir, force=force)
+    with _spinner(f"Pushing '{version}'…"):
+        push_to_github(url, version, version_dir, force=force)
 
 
 @hub.command("delete")

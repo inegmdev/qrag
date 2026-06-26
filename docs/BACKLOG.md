@@ -93,3 +93,5 @@ When starting a new session, review this file and prefer working on higher-sever
 - [ ] **L6** `cli.py:917,951,985` — Error messages reference `qrag mcp active` but the correct command is `qrag ai active`.
 
 - [ ] **L7** `database.py` — No debug-level logging emitted under `--verbose` for database operations; makes slow or failing `build` runs hard to diagnose.
+
+- [x] **GH#26** `cli.py`, `tui.py` — Rich TUI improvements: proportional CPU split (GH#27), MVC extraction to `tui.py`, scrolling log panel, worker-count header, parse `files/s` rate, status line with live error/warning counts, smart path truncation, `fmt_eta` formatter, terminal-too-small fallback, spinners on hub/search commands. Fixed in `feat/gh26-tui-improvements`. [GitHub](https://github.com/inegmdev/qrag/issues/26)
