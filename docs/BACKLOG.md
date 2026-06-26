@@ -38,6 +38,8 @@ When starting a new session, review this file and prefer working on higher-sever
 
 - [ ] **H2** `database.py:350-422` — No validation that query embedding dimension matches `EMBEDDING_DIM=384`. A misconfigured model silently returns garbage search results.
 
+- [x] **GH#23** `chunker.py` / `doc_parser.py` — Build fails with `'bytes' object is not an instance of 'str'` across `.js`, `.h`, `.c`, `.mk` files during the producer phase. Fixed in `pyproject.toml`: pinned `tree-sitter-language-pack<1.0.0` — v1.x (kreuzberg-dev "alef") changed `Parser.parse()` to require `str` not `bytes`; v0.x returns standard `tree_sitter.Parser` that accepts `bytes`. [GitHub](https://github.com/inegmdev/qrag/issues/23)
+
 - [ ] **H3** `cli.py:436-440` — Producer exceptions are caught and appended to an errors list, but `build` still exits with code `0` and reports success. A corrupted or incomplete database looks valid.
 
 - [ ] **H4** `cli.py:525` — If a producer thread dies without emitting a sentinel, `queue.get()` busy-loops indefinitely. The `build` command hangs forever with no error.

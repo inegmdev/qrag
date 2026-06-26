@@ -97,3 +97,14 @@ def test_chunk_code_file_line_numbers_are_positive():
     for c in chunks:
         assert c.line_start >= 1
         assert c.line_end >= c.line_start
+
+
+def test_chunk_code_file_code_text_is_str():
+    """Regression: GH#23 — tree-sitter-language-pack >=1.0 changed parse(bytes) to
+    parse(str), causing 'bytes' object is not an instance of 'str' TypeError.
+    All CodeChunk.code_text values must be str, never bytes."""
+    chunks = chunk_code_file(FIXTURE_C)
+    for c in chunks:
+        assert isinstance(c.code_text, str), (
+            f"code_text for {c.symbol_name!r} is {type(c.code_text).__name__}, expected str"
+        )
