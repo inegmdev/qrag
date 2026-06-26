@@ -68,12 +68,12 @@ Whenever the user asks about the backlog, what's next, or what issues exist:
 
 | ID | File:Line | Summary |
 |----|-----------|---------|
-| **C1** | `mcp_server.py:226-229` | All exceptions silently swallowed — server appears running but isn't |
-| **C2** | `cli.py:543,547` | `db_path`/`ddb_path` can be `None` in code-only or docs-only `build` → `TypeError` |
+| **C2** | `cli.py` | `db_path`/`ddb_path` can be `None` in code-only or docs-only `build` → `TypeError` |
 | **C3** | `database.py` (multiple) | DB connections not closed on exception → file descriptor exhaustion |
-| **H3** | `cli.py:436-440` | `build` exits 0 even when producers error — corrupt DB looks valid |
-| **H4** | `cli.py:525` | Producer thread death without sentinel → `build` hangs forever |
+| **H3** | `cli.py` | `build` exits 0 even when producers error — corrupt DB looks valid |
+| **H4** | `cli.py` | Producer thread death without sentinel → `build` hangs forever |
 | **H6** | `config.py:29-31` | `JSONDecodeError` on malformed config breaks every qrag command |
+| **GH#18** | `cli.py:274-481` | Add Antigravity CLI support to `qrag ai setup` |
 
 ---
 

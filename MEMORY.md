@@ -34,8 +34,8 @@
 | `qrag search code/docs/symbol` — CLI search | ✅ Implemented |
 | Automatic error log on failure (`~/.qrag/logs/`) | ✅ PR #8 |
 | `uv` as primary install method | ✅ PR #8 |
-| Rich TUI with progress bars + ETA | ✅ PR #? (feat/is1-is2-rich-tui-report) |
-| Post-build audit report file | ✅ PR #? (feat/is1-is2-rich-tui-report) |
+| Rich TUI with progress bars + ETA | ✅ PR #20 |
+| Post-build audit report file | ✅ PR #20 |
 | Multi-database search (fan-out across N active DBs) | ✅ PR #16 |
 | Rich doc metadata (name, revision, status, page, section hierarchy) | ✅ PR #17 |
 | Rich code metadata (parent block, call depth, chunk index within parent) | ✅ PR #17 |
@@ -130,8 +130,7 @@ Full authoritative list: [`docs/BACKLOG.md`](docs/BACKLOG.md). **IS1 and IS2 are
 | #16 | `feat/is3-multi-db-fanout` | Merged — multi-DB fan-out search (IS3) |
 | #17 | `feat/is4-is5-rich-metadata` | Merged — rich code + doc metadata (IS4, IS5) |
 | #19 | `refactor/rename-prepare-to-build` | Merged — renamed `prepare` → `build` |
-
-All branches cleaned up. `main` is current.
+| #20 | `feat/is1-is2-rich-tui-report` | Open — Rich TUI progress bars + build report (IS1, IS2) |
 
 ---
 
@@ -159,5 +158,5 @@ All branches cleaned up. `main` is current.
 2. Read [`docs/BACKLOG.md`](docs/BACKLOG.md) — **IS1–IS5 are top priority**
 3. Run `gh issue list --state open --limit 50` — add any GitHub issues not yet in `docs/BACKLOG.md` (see sync rule in `CLAUDE.md`)
 4. Check `git log --oneline -10` for recent changes
-5. Work on IS1 → IS2 → C2 → C3 → GH#18 unless user directs otherwise
+5. Work on C2 → C3 → H3 → H4 → H6 → GH#18 unless user directs otherwise
 6. Before ending: update `docs/BACKLOG.md` checkboxes, update this file if architecture/scope changed, update `docs/HANDOFF.md`

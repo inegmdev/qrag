@@ -277,3 +277,105 @@ matches `_rev3`, `_v2`, `_Rev1.2` etc. from the filename stem.
 
 **Status extraction:** first match of `released | approved | final | review | draft | obsolete`
 in the lowercased filename stem. Empty string if none matched.
+
+---
+
+## AD-8: Rich TUI Progress + Build Report (IS1, IS2)
+
+**Decision:** `qrag build` displays three transient Rich progress bars
+(Overall / Parse / Embed) that collapse on completion, leaving a single
+uv-style summary line. A plain-text `build-report.txt` is always written
+to `~/.qrag/<version>/` with per-file stats, language breakdown, and
+skipped-file inventory.
+
+**Why (IS1):** Plain `click.echo` output gave no feedback during long
+builds — the tool appeared frozen on large codebases. The uv/indicatif
+pattern (transient bars → single summary line) is familiar to the target
+audience.
+
+**Why (IS2):** Zero visibility into what entered the database. Users
+couldn't verify which files were parsed, which languages were detected,
+or which files were silently dropped due to parse errors or zero chunks.
+
+**Trade-off:** `rich>=13.0` is added only to the `[build]` optional-
+dependencies, keeping the consumer install lean. Rich is disabled when
+`--verbose` is active (JSON logs and Rich escape codes conflict on the
+same stderr fd).
+
+### Build Pipeline with Progress Instrumentation
+
+```mermaid
+flowchart TD
+    subgraph WORKER["ProcessPoolExecutor workers (parallel)"]
+        TCC["_timed_chunk_code_file(path)\nchunk_code_file() + monotonic timer"]
+        TPD["_timed_parse_doc_file(path)\nparse_doc_file() + monotonic timer"]
+    end
+
+    TCC -->|"(chunks, elapsed)"| Q["shared queue\n(_KIND_CODE, items, elapsed, root, rel)"]
+    TPD -->|"(sections, elapsed)"| Q
+
+    subgraph CONSUMER["Main thread — _consume_and_embed()"]
+        Q --> RECV["receive item from queue"]
+        RECV --> REC["append _FileRecord\n(path, kind, language, chunks, elapsed, skipped)"]
+        REC --> UPPARSE["_upd_overall()\nprogress.update(parse_task, advance=1)"]
+        UPPARSE --> CHECK{"pending ≥ 1000?"}
+        CHECK -->|yes| FLUSH["_flush_code/doc_batch()\n→ embed → insert"]
+        FLUSH --> UPEMB["_upd_embed(batch_len, elapsed_batch)\nrolling avg throughput\nadaptive total estimate"]
+        CHECK -->|no| RECV
+    end
+
+    CONSUMER -->|"file_records list"| REPORT["_write_build_report()\nbuild-report.txt"]
+```
+
+### Three-Bar Layout (transient=True, collapses on completion)
+
+```mermaid
+flowchart LR
+    subgraph PROGRESS["Rich Progress — during build"]
+        OV["Overall  [████████░░░░]  •  2m 15s  •  ETA 2m 32s\ntotal = total_files × 2\ncompleted = files_parsed + est_files_embedded"]
+        PA["  Parse  [████████████░░]  87/312 files  •  45s  •  ETA 1m 12s\ntotal = total_files (known)\nadaptive ETA from per-file worker times"]
+        EM["  Embed  [████░░░░░░░░░░]  4,203 chunks • 312/s  •  ETA 4m 51s\ntotal = None → re-estimated as avg_chunks/file × total_files\nrolling throughput over last 20 batches"]
+    end
+
+    PROGRESS -->|"transient=True\nbars cleared on exit"| SUMMARY["✓ 12,847 code chunks + 3,201 doc sections in 4m 32s\n  Build report: ~/.qrag/my-sdk/build-report.txt"]
+```
+
+### Adaptive ETA Model
+
+| Bar | Known upfront | Adaptive signal | ETA formula |
+|-----|--------------|-----------------|-------------|
+| Parse | `total_files` | per-file elapsed from worker | Rich built-in (speed = completed / elapsed) |
+| Embed | `None` → updated | avg chunks/file from completed files | `(est_total - chunks_embedded) / rolling_throughput` |
+| Overall | `total_files × 2` | parse fraction + embed fraction | combined advancement of both bars |
+
+### Build Report Structure (`build-report.txt`)
+
+```
+qrag build report
+Generated : 2026-06-26 14:32:01
+Output    : my-sdk
+
+======================================================================
+SUMMARY
+======================================================================
+Total wall-clock time  : 4m 32s
+Code files processed   : 287 (2 skipped)
+Doc files processed    : 23 (1 skipped)
+Code chunks stored     : 12,847
+Doc sections stored    : 3,201
+code.db size           : 48.2 MB
+docs.db size           : 12.7 MB
+
+======================================================================
+BY LANGUAGE
+======================================================================
+Language              Files   Chunks   Avg/file       Time
+...
+
+======================================================================
+SKIPPED FILES
+======================================================================
+Reason          Path
+zero_chunks     src/empty.h
+parse_error     docs/corrupted.pdf
+```
