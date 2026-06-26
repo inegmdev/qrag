@@ -894,7 +894,7 @@ def _consume_and_embed(
         if layout is not None:
             layout.on_file_parsed(abs_path, root, fr.chunks, elapsed, skipped, skip_reason)
 
-        if len(pending_code) >= _CHECKPOINT_SIZE:
+        if db_path and len(pending_code) >= _CHECKPOINT_SIZE:
             batch, pending_code = pending_code[:_CHECKPOINT_SIZE], pending_code[_CHECKPOINT_SIZE:]
             t0 = time.monotonic()
             n = _flush_code_batch(batch, db_path, device, precision, batch_size)
@@ -903,7 +903,7 @@ def _consume_and_embed(
             _flush_code_manifest()
             _emit_embed(n, time.monotonic() - t0)
 
-        if len(pending_doc) >= _CHECKPOINT_SIZE:
+        if ddb_path and len(pending_doc) >= _CHECKPOINT_SIZE:
             batch, pending_doc = pending_doc[:_CHECKPOINT_SIZE], pending_doc[_CHECKPOINT_SIZE:]
             t0 = time.monotonic()
             n = _flush_doc_batch(batch, ddb_path, device, precision, batch_size)
@@ -913,14 +913,14 @@ def _consume_and_embed(
             _emit_embed(n, time.monotonic() - t0)
 
     # Drain remainders
-    if pending_code:
+    if db_path and pending_code:
         t0 = time.monotonic()
         n = _flush_code_batch(pending_code, db_path, device, precision, batch_size)
         code_stored += n
         _code_flushed += len(pending_code)
         _flush_code_manifest()
         _emit_embed(n, time.monotonic() - t0)
-    if pending_doc:
+    if ddb_path and pending_doc:
         t0 = time.monotonic()
         n = _flush_doc_batch(pending_doc, ddb_path, device, precision, batch_size)
         docs_stored += n

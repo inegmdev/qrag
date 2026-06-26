@@ -24,9 +24,9 @@ When starting a new session, review this file and prefer working on higher-sever
 
 - [x] **C1** `mcp_server.py:226-229` — All exceptions silently swallowed with `continue`. Fixed in PR #11: `JSONDecodeError` → `-32700` response + log; unhandled `Exception` → `-32603` response + full traceback logged to `~/.qrag/logs/mcp_errors.log`; `KeyboardInterrupt`/`SystemExit` → clean exit 0; fatal loop crash → log + exit 1.
 
-- [ ] **C2** `cli.py:543,547` — `db_path`/`ddb_path` can be `None` in code-only or docs-only `build` runs, causing a `TypeError` crash. Single-type indexing is a documented use case.
+- [x] **C2** `cli.py:543,547` — `db_path`/`ddb_path` can be `None` in code-only or docs-only `build` runs, causing a `TypeError` crash. Fixed: added `db_path and` / `ddb_path and` guards on all four checkpoint/drain flush calls in `_consume_and_embed`.
 
-- [ ] **C3** `database.py` (multiple functions) — DB connections opened without `try/finally`. Any exception leaves the connection open; repeated failures exhaust OS file descriptors.
+- [x] **C3** `database.py` (multiple functions) — DB connections opened without `try/finally`. Fixed: wrapped all 13 open/close call-sites in `try/finally db.close()` — covers `init_code_db`, `init_docs_db`, `delete_chunks_for_file`, `insert_code_chunk`, `get_symbol`, `list_symbols`, `load_manifest`, `upsert_manifest_row`, `delete_manifest_row`, `delete_sections_for_source`, `insert_doc_section`, `search_docs`, `search_code`.
 
 ---
 
