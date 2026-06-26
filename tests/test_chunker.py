@@ -1,7 +1,13 @@
-"""Unit tests for chunker.py — token-split logic."""
+"""Unit tests for chunker.py — token-split logic.
+
+Skipped automatically when tree-sitter-language-pack is not installed
+(i.e. base install without the [build] extras).
+"""
 from pathlib import Path
 
 import pytest
+
+pytest.importorskip("tree_sitter_language_pack", reason="requires qrag[build] extras")
 
 from qrag.chunker import CodeChunk, _split_large_chunk, _token_count, chunk_code_file
 
