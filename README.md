@@ -113,14 +113,38 @@ qrag hub download v1.1    # auto-added to the active set
 
 ### 1. Install qrag with build dependencies
 
+> **Install size:** The default CPU install downloads **~220 MB**. Enabling GPU acceleration adds ~2.3 GB of CUDA libraries (cuBLAS, cuDNN, triton, etc.) — opt in only if you have an NVIDIA GPU.
+
+#### with uv (recommended)
+
 ```bash
+# CPU — default, ~220 MB
 uv tool install "git+https://github.com/inegmdev/qrag.git@main[build]"
+
+# GPU-accelerated — ~2.5 GB, requires NVIDIA GPU + CUDA 12.4
+uv tool install "git+https://github.com/inegmdev/qrag.git@main[full]" --no-sources
 ```
 
-For GPU-accelerated embedding:
+#### with pipx
 
 ```bash
-uv tool install "git+https://github.com/inegmdev/qrag.git@main[full]"
+# CPU — default, ~220 MB
+pipx install "git+https://github.com/inegmdev/qrag.git[build]" \
+  --pip-args="--extra-index-url https://download.pytorch.org/whl/cpu"
+
+# GPU-accelerated — ~2.5 GB, requires NVIDIA GPU
+pipx install "git+https://github.com/inegmdev/qrag.git[full]"
+```
+
+#### with pip
+
+```bash
+# CPU — install torch CPU wheel first, then qrag
+pip install torch --index-url https://download.pytorch.org/whl/cpu
+pip install "git+https://github.com/inegmdev/qrag.git[build]"
+
+# GPU-accelerated — ~2.5 GB, requires NVIDIA GPU
+pip install "git+https://github.com/inegmdev/qrag.git[full]"
 ```
 
 ### 2. Configure the distribution repository
