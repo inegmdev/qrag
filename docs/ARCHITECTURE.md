@@ -379,3 +379,92 @@ Reason          Path
 zero_chunks     src/empty.h
 parse_error     docs/corrupted.pdf
 ```
+
+---
+
+## AD-9: Rich TUI MVC Architecture — GH#26
+
+**Decision:** All Rich rendering logic is extracted into `src/qrag/tui.py`. `cli.py`
+owns data processing only; it fires event callbacks (`on_file_parsed`, `on_error`,
+`on_embed_batch`) into a `BuildLayout` instance that manages the full terminal layout.
+
+**Why:** AD-8's TUI lived entirely in `cli.py` as nested closures and inline Rich
+imports. Adding a scrolling log panel, a status line, a worker header, and fallback
+logic would have made `cli.py` unreadable. MVC separation keeps rendering isolated,
+independently testable, and easy to extend.
+
+**Trade-off:** One extra module (`tui.py`). Rich imports are still lazy (`[build]`
+extras only); `tui.py` is only imported inside `build()` after `_ensure_build_deps()`
+confirms Rich is present.
+
+### Layout Hierarchy (during `qrag build`)
+
+```mermaid
+flowchart TD
+    LIVE["Live(transient=True, refresh_per_second=2)"]
+    LIVE --> RENDER["BuildLayout._render()"]
+    RENDER --> HDR["Text: ⚙ N code workers · M doc workers (C cores total)"]
+    RENDER --> RULE1["Rule (dim)"]
+    RENDER --> PROG["Progress (3 bars)"]
+    PROG --> OV["Overall   [bar]  count  —  ETA"]
+    PROG --> PA["  Parse   [bar]  N/M files  X files/s  ETA"]
+    PROG --> EM["  Embed   [bar]  N chunks  X chunks/s  ETA"]
+    RENDER --> RULE2["Rule (dim)"]
+    RENDER --> PANEL["Panel: Processing (scrolling log, N lines)"]
+    PANEL --> LOGLINES["✓ path  N chunks  Xs\n⚠ path  0 chunks  Xs\n✗ path  error msg"]
+    RENDER --> FOOTER["Text: Build report → ~/.qrag/<v>/build-report.txt (dim)"]
+    RENDER --> RULE3["Rule (dim)"]
+    RENDER --> STATUS["Text: N errors • M warnings • X chunks/s • A+B workers"]
+```
+
+### Fallback Mode (terminal too small)
+
+```mermaid
+flowchart LR
+    SIZE{"console.size\n< MIN_HEIGHT or\n< MIN_WIDTH"}
+    SIZE -->|"yes: h<12 or w<60"| FALLBACK["Text: Terminal too small\n+ Progress (3 bars only)"]
+    SIZE -->|"no"| FULL["Full layout\n(header + bars + panel + status)"]
+```
+
+### Proportional CPU Split (GH#27, applied here)
+
+```mermaid
+flowchart TD
+    TOTAL["total_workers = limit_cpu or cpu_count()"]
+    TOTAL --> BOTH{"code files\nAND doc files?"}
+    BOTH -->|"yes"| SPLIT["code_workers = max(1, round(total × code_ratio))\ndoc_workers  = max(1, total − code_workers)"]
+    BOTH -->|"code only"| CONLY["code_workers = total\ndoc_workers  = 0"]
+    BOTH -->|"docs only"| DONLY["code_workers = 0\ndoc_workers  = total"]
+    SPLIT & CONLY & DONLY --> PROCS["ProcessPoolExecutor(max_workers=code_workers)\nProcessPoolExecutor(max_workers=doc_workers)"]
+```
+
+### Real-Time Error Queue
+
+```mermaid
+flowchart LR
+    WORKER["Worker process\nexception raised"]
+    WORKER -->|"errors.append(...)"| ERRLIST["producer_errors list\n(post-build exit check)"]
+    WORKER -->|"q.put((_KIND_ERROR, msg, 0.0, root, rel))"| QUEUE["shared queue"]
+    QUEUE --> CONSUMER["_consume_and_embed()\nkind == _KIND_ERROR\n→ layout.on_error(...)"]
+    CONSUMER --> PANEL["Log panel: ✗ path  error msg (red)\nStatus line: +1 error"]
+```
+
+### Custom Progress Columns (fixed-width grid)
+
+| Column | Class | Min width | Content |
+|--------|-------|-----------|---------|
+| Count | `_FieldColumn("count")` | 15 | `"N/M files"` / `"N chunks"` / `""` |
+| Rate | `_FieldColumn("rate")` | 16 | `"X files/s"` / `"X chunks/s"` / `"—"` |
+| ETA | `_EtaColumn` | 8 | `fmt_eta(task.time_remaining)` |
+
+`fmt_eta(seconds)` → `"Xs"` (< 60) / `"Xm Ys"` (< 3600) / `"Xh Ym"` (≥ 3600)
+
+### Path Truncation (`fmt_path`)
+
+```
+Full path fits      → a/b/c/file.c
+start/…/parent/file → sdk/…/gpio/gpio.c   ← preferred, grow head
+…/parent/file       → …/gpio/gpio.c
+…/file              → …/gpio.c
+filename only       → gpio.c (truncated if still too long)
+```
