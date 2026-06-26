@@ -127,6 +127,8 @@ Full authoritative list: [`docs/BACKLOG.md`](docs/BACKLOG.md). **IS1–IS5 are u
 | #12 | `feat/c0-multi-language-support` | Merged — 305+ language support + build system indexing |
 | #15 | `feat/gh13-role-based-deps` | Merged — consumer vs builder dep split |
 | #16 | `feat/is3-multi-db-fanout` | Merged — multi-DB fan-out search (IS3) |
+| #17 | `feat/is4-is5-rich-metadata` | Merged — rich code + doc metadata (IS4, IS5) |
+| #19 | `refactor/rename-prepare-to-build` | Merged — renamed `prepare` → `build` |
 
 All branches cleaned up. `main` is current.
 
