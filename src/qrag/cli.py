@@ -604,6 +604,51 @@ def _sha256(path: Path) -> str:
     return h.hexdigest()
 
 
+def _dirs_hash(dirs: tuple[Path, ...]) -> str:
+    import hashlib
+    resolved = sorted(str(Path(d).resolve()) for d in dirs)
+    return hashlib.sha256("\n".join(resolved).encode()).hexdigest()
+
+
+_BUILD_STATE_FILE = ".qrag-build-state.json"
+
+
+def _write_build_state(
+    out_dir: Path,
+    input_dirs: tuple[Path, ...],
+    device: str,
+    limit_cpu: int | None,
+    batch_size: int,
+    output: str,
+    files_total: int,
+) -> None:
+    state = {
+        "started_at": datetime.datetime.utcnow().isoformat() + "Z",
+        "input_dirs": [str(Path(d).resolve()) for d in input_dirs],
+        "input_dirs_hash": _dirs_hash(input_dirs),
+        "device": device,
+        "limit_cpu": limit_cpu,
+        "batch_size": batch_size,
+        "output": output,
+        "files_total": files_total,
+    }
+    (out_dir / _BUILD_STATE_FILE).write_text(json.dumps(state, indent=2))
+
+
+def _clear_build_state(out_dir: Path) -> None:
+    (out_dir / _BUILD_STATE_FILE).unlink(missing_ok=True)
+
+
+def _count_manifest_rows(out_dir: Path) -> int:
+    from .database import load_manifest
+    total = 0
+    for db_name in ("code.db", "docs.db"):
+        p = out_dir / db_name
+        if p.exists():
+            total += len(load_manifest(p))
+    return total
+
+
 @dataclass
 class _FileRecord:
     path: str
@@ -1053,7 +1098,9 @@ def _write_build_report(
               help="Force full rebuild, ignoring incremental state")
 @click.option("--yes", "-y", "yes_flag", is_flag=True,
               help="Skip confirmation prompt when --force would delete existing databases")
-def build(input_dirs: tuple[Path, ...], output: str, device: str, limit_cpu: int | None, batch_size: int | None, force: bool, yes_flag: bool):
+@click.option("--no-resume", "no_resume", is_flag=True,
+              help="Ignore any interrupted build state and start fresh")
+def build(input_dirs: tuple[Path, ...], output: str, device: str, limit_cpu: int | None, batch_size: int | None, force: bool, yes_flag: bool, no_resume: bool):
     """Parse, embed, and store code and/or docs into a named database.
 
     Each -i directory is scanned automatically: source files and build system
@@ -1089,6 +1136,41 @@ def build(input_dirs: tuple[Path, ...], output: str, device: str, limit_cpu: int
 
     out_dir = CACHE_DIR / output
     out_dir.mkdir(parents=True, exist_ok=True)
+
+    # ── GH#31: detect interrupted build ───────────────────────────────────
+    if not force and (out_dir / _BUILD_STATE_FILE).exists():
+        try:
+            _state = json.loads((out_dir / _BUILD_STATE_FILE).read_text())
+        except Exception:
+            _state = {}
+        _files_done = _count_manifest_rows(out_dir)
+        _files_total = _state.get("files_total", 0)
+        _started_raw = _state.get("started_at", "")
+        _started_fmt = _started_raw[:16].replace("T", " ") if len(_started_raw) >= 16 else _started_raw
+        _pct = f"{_files_done / max(1, _files_total):.0%}"
+        click.echo(
+            f"⚡ Interrupted build detected "
+            f"(started {_started_fmt}, {_files_done}/{_files_total} files done [{_pct}]):"
+        )
+        _saved_dirs = _state.get("input_dirs", [])
+        if _saved_dirs:
+            click.echo("  " + "  ".join(f"-i {d}" for d in _saved_dirs))
+        _saved_hash = _state.get("input_dirs_hash", "")
+        if _saved_hash and _dirs_hash(input_dirs) != _saved_hash:
+            click.echo("  Note: -i dirs differ from the interrupted run — proceeding with current dirs.")
+        if no_resume:
+            click.echo("[build] --no-resume: discarding interrupted state, starting fresh.")
+            _clear_build_state(out_dir)
+        elif not sys.stdin.isatty():
+            click.echo("[build] Non-interactive mode: auto-resuming.")
+        else:
+            if not click.confirm("Resume?", default=True):
+                click.echo("[build] Discarding interrupted state, starting fresh.")
+                _clear_build_state(out_dir)
+
+    # ── GH#29: clear interrupted state on --force ─────────────────────────
+    if force:
+        _clear_build_state(out_dir)
 
     # Group files by their input directory (needed for manifest rel_path computation)
     code_by_dir: dict[Path, list[Path]] = {}
@@ -1169,15 +1251,15 @@ def build(input_dirs: tuple[Path, ...], output: str, device: str, limit_cpu: int
 
         manifest = load_manifest(db_path)
 
+        # GH#32: dropped roots — warn and clean up their chunks
         if manifest and not force:
             stored_roots = {r for (r, _) in manifest}
-            current_roots = {r for (r, _) in walk}
-            if stored_roots != current_roots:
-                click.echo(
-                    "Error: -i roots differ from those stored in the manifest. "
-                    "Use --force to rebuild from scratch.", err=True
-                )
-                sys.exit(1)
+            current_roots = {root for d, files in code_by_dir.items() for root in [str(d.resolve())]}
+            dropped_roots = stored_roots - current_roots
+            if dropped_roots:
+                for dr in sorted(dropped_roots):
+                    n_drop = sum(1 for (r, _) in manifest if r == dr)
+                    click.echo(f"[build] Removing {n_drop} file(s) from dropped root: {dr}")
 
         for (root, rel) in set(manifest) - set(walk):
             delete_chunks_for_file(db_path, str(Path(root) / rel))
@@ -1221,15 +1303,15 @@ def build(input_dirs: tuple[Path, ...], output: str, device: str, limit_cpu: int
 
         manifest_docs = load_manifest(ddb_path)
 
+        # GH#32: dropped roots — warn and clean up their sections
         if manifest_docs and not force:
             stored_roots = {r for (r, _) in manifest_docs}
-            current_roots = {r for (r, _) in walk_docs}
-            if stored_roots != current_roots:
-                click.echo(
-                    "Error: -i roots differ from those stored in the manifest. "
-                    "Use --force to rebuild from scratch.", err=True
-                )
-                sys.exit(1)
+            current_roots = {root for d, files in doc_by_dir.items() for root in [str(d.resolve())]}
+            dropped_roots = stored_roots - current_roots
+            if dropped_roots:
+                for dr in sorted(dropped_roots):
+                    n_drop = sum(1 for (r, _) in manifest_docs if r == dr)
+                    click.echo(f"[build] Removing {n_drop} doc file(s) from dropped root: {dr}")
 
         for (root, rel) in set(manifest_docs) - set(walk_docs):
             delete_sections_for_source(ddb_path, str(Path(root) / rel))
@@ -1252,6 +1334,11 @@ def build(input_dirs: tuple[Path, ...], output: str, device: str, limit_cpu: int
 
         if to_process_docs:
             docs_changed = True
+
+    # ── GH#31: write state file so an interruption can be detected next run ─
+    _files_remaining = len(to_process) + len(to_process_docs)
+    if _files_remaining > 0:
+        _write_build_state(out_dir, input_dirs, resolved_device, limit_cpu, batch_size or 0, output, _files_remaining)
 
     # ── Concurrent parse → embed → checkpoint ─────────────────────────────
     num_producers = (1 if to_process else 0) + (1 if to_process_docs else 0)
@@ -1362,6 +1449,7 @@ def build(input_dirs: tuple[Path, ...], output: str, device: str, limit_cpu: int
 
     add_active_version(output)
     click.echo(f"Version '{output}' added to active versions.")
+    _clear_build_state(out_dir)  # GH#31: clean completion — no interrupted state
 
 
 # ---------------------------------------------------------------------------
