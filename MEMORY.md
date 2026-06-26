@@ -28,14 +28,14 @@
 | SQLite + sqlite-vec for vector storage/search | ✅ Implemented |
 | MCP server (JSON-RPC 2.0 over stdio) exposing 4 tools | ✅ Implemented |
 | MCP server exceptions surface as JSON-RPC errors; logged to `~/.qrag/logs/mcp_errors.log` | ✅ PR #11 |
-| `qrag prepare` — build `code.db` + `docs.db` | ✅ Implemented |
+| `qrag build` — build `code.db` + `docs.db` | ✅ Implemented |
 | `qrag hub push/download/list` — GitHub Releases distribution | ✅ Implemented |
 | `qrag ai setup` — auto-install MCP config for Claude/Gemini | ✅ Implemented |
 | `qrag search code/docs/symbol` — CLI search | ✅ Implemented |
 | Automatic error log on failure (`~/.qrag/logs/`) | ✅ PR #8 |
 | `uv` as primary install method | ✅ PR #8 |
 | Rich TUI with progress bars + ETA | ❌ IS1 — top priority |
-| Post-prepare audit report file | ❌ IS2 — top priority |
+| Post-build audit report file | ❌ IS2 — top priority |
 | Multi-database search (fan-out across N active DBs) | ✅ PR #16 |
 | Rich doc metadata (name, revision, status, page, section hierarchy) | ❌ IS4 — top priority |
 | Rich code metadata (parent block, call depth, chunk index within parent) | ❌ IS5 — top priority |
@@ -104,12 +104,12 @@ Full authoritative list: [`docs/BACKLOG.md`](docs/BACKLOG.md). **IS1–IS5 are u
 
 | ID | Severity | Summary |
 |----|----------|---------|
-| **IS1** | Critical | Ugly TUI — add rich progress bars + ETA to `prepare` and all long-running commands |
+| **IS1** | Critical | Ugly TUI — add rich progress bars + ETA to `build` and all long-running commands |
 | **IS2** | Critical | No post-prepare report — write `prepare-report.txt` with per-file language, chunks, time |
 | ~~**IS3**~~ | ~~Critical~~ | ~~Single active DB only~~ — resolved PR #16 |
 | **IS4** | Critical | Doc chunks missing rich metadata (doc name, revision, status, section hierarchy, page) |
 | **IS5** | Critical | Code chunks missing rich metadata (parent block, call depth, chunk index) |
-| **C2** | Critical | `db_path`/`ddb_path` can be `None` in code-only or docs-only `prepare` → `TypeError` |
+| **C2** | Critical | `db_path`/`ddb_path` can be `None` in code-only or docs-only `build` → `TypeError` |
 | **C3** | Critical | DB connections not closed on exception → fd exhaustion |
 | **H0** | High | Build-source relationship metadata (link cmake targets to their source files) |
 | **H1–H6** | High | See `docs/BACKLOG.md` |

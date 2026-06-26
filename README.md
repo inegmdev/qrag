@@ -134,7 +134,7 @@ export QRAG_GITHUB_URL=https://github.com/your-org/qrag-databases
 Point `qrag` at directories containing source code and/or docs. Content type is detected automatically from file extensions and filenames.
 
 ```bash
-qrag prepare \
+qrag build \
   -i /path/to/source/ \
   -i /path/to/docs/ \
   -o v1.0
@@ -172,7 +172,7 @@ Notify your team to run `qrag hub download v1.0`.
 ### Updating the database
 
 ```bash
-qrag prepare -i /path/to/source/ -i /path/to/docs/ -o v1.1
+qrag build -i /path/to/source/ -i /path/to/docs/ -o v1.1
 qrag hub push v1.1
 ```
 
@@ -186,7 +186,7 @@ qrag [--verbose] [--version] COMMAND [OPTIONS]
 
 | Command | Description |
 |---------|-------------|
-| `prepare -i DIR -o NAME` | Parse, embed, and store code/docs into a named database |
+| `build -i DIR -o NAME` | Parse, embed, and store code/docs into a named database |
 | `status` | Show active versions and database file paths |
 | `info` | Show active version metadata |
 | `ai active [VERSION ...]` | Show or set active version(s); pass multiple to search across all |
@@ -224,7 +224,7 @@ A: Run `qrag status` to confirm databases exist; check that `QRAG_GITHUB_URL` is
 **Q: "No GitHub authentication"**  
 A: Set the `GITHUB_TOKEN` environment variable or run `gh auth login`.
 
-**Q: `prepare` fails with a missing-dependency error**  
+**Q: `build` fails with a missing-dependency error**  
 A: You need the build extras. Reinstall with:
 ```bash
 uv tool install --reinstall "git+https://github.com/inegmdev/qrag.git@main[build]"
