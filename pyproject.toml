@@ -43,6 +43,16 @@ where = ["src"]
 [tool.setuptools.package-data]
 qrag = ["models/**/*"]
 
+# uv: always resolve torch from the CPU-only index (saves ~2.3 GB vs default PyPI)
+# GPU users: uv tool install qrag[full] --no-sources  (bypasses this to get CUDA torch)
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu" }]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 markers = [
