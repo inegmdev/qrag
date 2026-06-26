@@ -768,6 +768,8 @@ def _consume_and_embed(
     batch_size: int,
     *,
     layout=None,
+    to_process: dict | None = None,
+    to_process_docs: dict | None = None,
     total_files: int = 0,
 ) -> tuple[int, int, set, set, list]:
     """Drain the producer queue, embed, and write to DB with periodic checkpointing.
@@ -784,6 +786,47 @@ def _consume_and_embed(
     sentinels_seen = 0
     file_records: list[_FileRecord] = []
     chunks_embedded = 0
+
+    # GH#28: incremental manifest tracking
+    _code_recv = 0
+    _code_flushed = 0
+    _manifest_code: list[tuple[str, str, int]] = []
+    _doc_recv = 0
+    _doc_flushed = 0
+    _manifest_docs: list[tuple[str, str, int]] = []
+
+    if to_process and db_path:
+        from .database import upsert_manifest_rows_batch as _upsert_code_manifest
+    else:
+        _upsert_code_manifest = None  # type: ignore[assignment]
+    if to_process_docs and ddb_path:
+        from .database import upsert_manifest_rows_batch as _upsert_doc_manifest
+    else:
+        _upsert_doc_manifest = None  # type: ignore[assignment]
+
+    def _flush_code_manifest() -> None:
+        nonlocal _manifest_code
+        if not _upsert_code_manifest or not _manifest_code:
+            return
+        ready = [(r, rp) for (r, rp, ei) in _manifest_code if ei <= _code_flushed]
+        _manifest_code = [(r, rp, ei) for (r, rp, ei) in _manifest_code if ei > _code_flushed]
+        if ready:
+            _upsert_code_manifest(db_path, [  # type: ignore[arg-type]
+                (rp, r, to_process[(r, rp)].stat().st_mtime, _sha256(to_process[(r, rp)]))  # type: ignore[index]
+                for r, rp in ready
+            ])
+
+    def _flush_doc_manifest() -> None:
+        nonlocal _manifest_docs
+        if not _upsert_doc_manifest or not _manifest_docs:
+            return
+        ready = [(r, rp) for (r, rp, ei) in _manifest_docs if ei <= _doc_flushed]
+        _manifest_docs = [(r, rp, ei) for (r, rp, ei) in _manifest_docs if ei > _doc_flushed]
+        if ready:
+            _upsert_doc_manifest(ddb_path, [  # type: ignore[arg-type]
+                (rp, r, to_process_docs[(r, rp)].stat().st_mtime, _sha256(to_process_docs[(r, rp)]))  # type: ignore[index]
+                for r, rp in ready
+            ])
 
     def _emit_embed(n: int, elapsed: float) -> None:
         nonlocal chunks_embedded
@@ -822,6 +865,13 @@ def _consume_and_embed(
                 chunks=len(payload), elapsed=elapsed,
                 skipped=skipped, skip_reason=skip_reason,
             )
+            if _upsert_code_manifest:
+                if payload:
+                    _code_recv += len(payload)
+                    _manifest_code.append((root, rel, _code_recv))
+                else:
+                    abs_p = to_process[(root, rel)]  # type: ignore[index]
+                    _upsert_code_manifest(db_path, [(rel, root, abs_p.stat().st_mtime, _sha256(abs_p))])  # type: ignore[arg-type]
         else:
             pending_doc.extend(payload)
             successful_docs.add((root, rel))
@@ -832,6 +882,13 @@ def _consume_and_embed(
                 chunks=len(payload), elapsed=elapsed,
                 skipped=skipped, skip_reason=skip_reason,
             )
+            if _upsert_doc_manifest:
+                if payload:
+                    _doc_recv += len(payload)
+                    _manifest_docs.append((root, rel, _doc_recv))
+                else:
+                    abs_p = to_process_docs[(root, rel)]  # type: ignore[index]
+                    _upsert_doc_manifest(ddb_path, [(rel, root, abs_p.stat().st_mtime, _sha256(abs_p))])  # type: ignore[arg-type]
 
         file_records.append(fr)
         if layout is not None:
@@ -842,6 +899,8 @@ def _consume_and_embed(
             t0 = time.monotonic()
             n = _flush_code_batch(batch, db_path, device, precision, batch_size)
             code_stored += n
+            _code_flushed += len(batch)
+            _flush_code_manifest()
             _emit_embed(n, time.monotonic() - t0)
 
         if len(pending_doc) >= _CHECKPOINT_SIZE:
@@ -849,6 +908,8 @@ def _consume_and_embed(
             t0 = time.monotonic()
             n = _flush_doc_batch(batch, ddb_path, device, precision, batch_size)
             docs_stored += n
+            _doc_flushed += len(batch)
+            _flush_doc_manifest()
             _emit_embed(n, time.monotonic() - t0)
 
     # Drain remainders
@@ -856,11 +917,15 @@ def _consume_and_embed(
         t0 = time.monotonic()
         n = _flush_code_batch(pending_code, db_path, device, precision, batch_size)
         code_stored += n
+        _code_flushed += len(pending_code)
+        _flush_code_manifest()
         _emit_embed(n, time.monotonic() - t0)
     if pending_doc:
         t0 = time.monotonic()
         n = _flush_doc_batch(pending_doc, ddb_path, device, precision, batch_size)
         docs_stored += n
+        _doc_flushed += len(pending_doc)
+        _flush_doc_manifest()
         _emit_embed(n, time.monotonic() - t0)
 
     return code_stored, docs_stored, successful_code, successful_docs, file_records
@@ -986,7 +1051,9 @@ def _write_build_report(
               help="Embedding batch size (default: 256 for CPU, 1024 for CUDA)")
 @click.option("--force", is_flag=True,
               help="Force full rebuild, ignoring incremental state")
-def build(input_dirs: tuple[Path, ...], output: str, device: str, limit_cpu: int | None, batch_size: int | None, force: bool):
+@click.option("--yes", "-y", "yes_flag", is_flag=True,
+              help="Skip confirmation prompt when --force would delete existing databases")
+def build(input_dirs: tuple[Path, ...], output: str, device: str, limit_cpu: int | None, batch_size: int | None, force: bool, yes_flag: bool):
     """Parse, embed, and store code and/or docs into a named database.
 
     Each -i directory is scanned automatically: source files and build system
@@ -1048,6 +1115,32 @@ def build(input_dirs: tuple[Path, ...], output: str, device: str, limit_cpu: int
         sys.exit(1)
 
     _logger.info("build: %d code file(s), %d doc file(s)", len(all_code_files), len(all_doc_files))
+
+    # ── GH#29: warn and confirm before --force deletes existing databases ───
+    if force:
+        _dbs_to_delete: list[Path] = []
+        if all_code_files and (out_dir / "code.db").exists():
+            _dbs_to_delete.append(out_dir / "code.db")
+        if all_doc_files and (out_dir / "docs.db").exists():
+            _dbs_to_delete.append(out_dir / "docs.db")
+        if _dbs_to_delete:
+            from .database import load_manifest as _load_manifest_for_warn
+            click.echo("Warning: --force will permanently delete:")
+            for _p in _dbs_to_delete:
+                _size_mb = _p.stat().st_size / 1_048_576
+                _mtime = datetime.datetime.fromtimestamp(_p.stat().st_mtime).strftime("%Y-%m-%d %H:%M")
+                _nfiles = len(_load_manifest_for_warn(_p))
+                click.echo(f"  {_p}  ({_size_mb:.1f} MB, {_nfiles} files indexed, last built {_mtime})")
+            if not yes_flag:
+                if not sys.stdin.isatty():
+                    click.echo(
+                        "Error: --force with existing database(s) requires --yes in non-interactive mode.",
+                        err=True,
+                    )
+                    sys.exit(1)
+                if not click.confirm("Delete these databases and rebuild from scratch?", default=False):
+                    click.echo("Aborted.")
+                    sys.exit(0)
 
     db_path: Path | None = None
     ddb_path: Path | None = None
@@ -1205,7 +1298,8 @@ def build(input_dirs: tuple[Path, ...], output: str, device: str, limit_cpu: int
             with BuildLayout(total_files, out_dir, code_workers, doc_workers) as layout:
                 code_stored, docs_stored, successful_code, successful_docs, file_records = _consume_and_embed(
                     q, num_producers, db_path, ddb_path, resolved_device, precision, batch_size,
-                    layout=layout, total_files=total_files,
+                    layout=layout, to_process=to_process, to_process_docs=to_process_docs,
+                    total_files=total_files,
                 )
                 for t in threads:
                     t.join()
@@ -1217,7 +1311,8 @@ def build(input_dirs: tuple[Path, ...], output: str, device: str, limit_cpu: int
             )
             code_stored, docs_stored, successful_code, successful_docs, file_records = _consume_and_embed(
                 q, num_producers, db_path, ddb_path, resolved_device, precision, batch_size,
-                layout=None, total_files=total_files,
+                layout=None, to_process=to_process, to_process_docs=to_process_docs,
+                total_files=total_files,
             )
             for t in threads:
                 t.join()
@@ -1233,23 +1328,11 @@ def build(input_dirs: tuple[Path, ...], output: str, device: str, limit_cpu: int
             )
             sys.exit(1)
 
-        # Batch-write manifests for all successfully processed files
-        if successful_code and db_path:
-            from .database import upsert_manifest_rows_batch
-            rows = [
-                (rel, root, to_process[(root, rel)].stat().st_mtime, _sha256(to_process[(root, rel)]))
-                for (root, rel) in successful_code
-            ]
-            upsert_manifest_rows_batch(db_path, rows)
+        # GH#28: manifest rows are now written incrementally inside _consume_and_embed.
+        # Log counts for diagnostics only.
+        if successful_code:
             _logger.info("build: stored %d code chunks in %s", code_stored, db_path)
-
-        if successful_docs and ddb_path:
-            from .database import upsert_manifest_rows_batch
-            rows = [
-                (rel, root, to_process_docs[(root, rel)].stat().st_mtime, _sha256(to_process_docs[(root, rel)]))
-                for (root, rel) in successful_docs
-            ]
-            upsert_manifest_rows_batch(ddb_path, rows)
+        if successful_docs:
             _logger.info("build: stored %d doc sections in %s", docs_stored, ddb_path)
 
         # IS2 — build report

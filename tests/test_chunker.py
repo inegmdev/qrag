@@ -22,6 +22,7 @@ def _make_chunk(text: str, name: str = "bigfunc") -> CodeChunk:
         line_end=text.count("\n") + 1,
         code_text=text,
         chunk_type="function",
+        language="c",
     )
 
 

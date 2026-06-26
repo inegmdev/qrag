@@ -48,6 +48,16 @@ When starting a new session, review this file and prefer working on higher-sever
 
 - [ ] **H6** `config.py:29-31` — Malformed `~/.qrag/config.json` raises an uncaught `JSONDecodeError`, breaking every qrag command until the file is manually deleted.
 
+- [x] **GH#28** `cli.py:1247` — Incremental delta broken on interrupted build: `upsert_manifest_rows_batch` called only after full `_consume_and_embed` completes; any interruption loses all manifest progress → full re-process on next run. Fixed in fix/gh28-gh29-build-safety: boundary tracking (`_code_recv`/`_code_flushed`) writes manifest rows per-file immediately after each flush inside `_consume_and_embed`. [GitHub](https://github.com/inegmdev/qrag/issues/28)
+
+- [x] **GH#29** `cli.py:1065-1066` — `--force` silently deletes `code.db`/`docs.db` with no warning or confirmation prompt; users lose hours of build with a single flag. Fixed in fix/gh28-gh29-build-safety: shows DB summary (size, file count, last-built), requires `[y/N]` confirmation; `--yes`/`-y` skips for CI; non-TTY without `--yes` exits with error. [GitHub](https://github.com/inegmdev/qrag/issues/29)
+
+- [ ] **GH#30** `cli.py` — No pre-build visualization of existing DB (size, file count, last-built) or delta preview (N changed, M new); no confirm-before-proceed prompt. [GitHub](https://github.com/inegmdev/qrag/issues/30)
+
+- [ ] **GH#31** `cli.py` — No resume-last-build: interrupted builds lose session state (input paths, device, progress); next run starts from scratch with no prompt to resume. [GitHub](https://github.com/inegmdev/qrag/issues/31)
+
+- [ ] **GH#32** `cli.py:1077-1085` — "Roots differ" restriction blocks incremental addition of new `-i` directories; forces `--force` full wipe even though existing data is valid. Tracked as M5 below. [GitHub](https://github.com/inegmdev/qrag/issues/32)
+
 - [x] **GH#13** — Optimize Dependencies: Consumer vs. Builder Roles with Role-Based Installation. Split `pyproject.toml` into `dependencies` (consumer: click, sqlite-vec only) and `[project.optional-dependencies]` build/build.gpu/full groups; add `_ensure_builder_deps()` lazy-check in `build` command that detects GPU and prints actionable install instructions per package manager. [GitHub](https://github.com/inegmdev/qrag/issues/13)
 
 - [x] **GH#18** `cli.py:274-391,431-481` — Add Antigravity CLI support alongside Gemini and Claude. Fixed in feat/gh18-antigravity-support: detect `agy` binary; write MCP config to `~/.gemini/config/mcp_config.json` (global) or `.agents/mcp_config.json` (local) via new `_write_mcp_config()` helper; install skill to `~/.gemini/config/skills/qrag/SKILL.md` (global) or `.agents/skills/qrag/SKILL.md` (local). [GitHub](https://github.com/inegmdev/qrag/issues/18)
