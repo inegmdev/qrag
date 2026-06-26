@@ -115,7 +115,7 @@ Given: $ARGUMENTS (your question or topic)
 
 5. **Check in with the user** every 2–3 rounds: briefly state what you have found so far and ask if you should continue or refocus.
 
-6. **If information is not found**: Tell the user the topic is not in the local database. Suggest searching online and offer to help index new content with `qrag prepare -i <path>`.
+6. **If information is not found**: Tell the user the topic is not in the local database. Suggest searching online and offer to help index new content with `qrag build -i <path>`.
 
 7. **Conclude**: Synthesize all findings into a clear answer. Cite source file paths, symbol names, doc sections, and page numbers. Flag any inconsistencies between docs and code.
 
@@ -132,10 +132,10 @@ v0.2.0
   - Automatic error log: on any failure, a log file is written to
     ~/.qrag/logs/ with version, platform, full command, and traceback.
     The path is printed to stderr so you can attach it to a bug report.
-  - Producer errors in `prepare` now exit non-zero and appear in the log.
+  - Producer errors in `build` now exit non-zero and appear in the log.
 
 v0.1.0
-  - Initial release: prepare, hub, ai, search, status commands.
+  - Initial release: build, hub, ai, search, status commands.
   - Parallel code/doc indexing with Tree-sitter and Sentence-Transformers.
   - MCP server with search_code, search_docs, get_symbol, list_symbols.
 """
@@ -715,7 +715,7 @@ def _consume_and_embed(
               help="Embedding batch size (default: 256 for CPU, 1024 for CUDA)")
 @click.option("--force", is_flag=True,
               help="Force full rebuild, ignoring incremental state")
-def prepare(input_dirs: tuple[Path, ...], output: str, device: str, limit_cpu: int | None, batch_size: int | None, force: bool):
+def build(input_dirs: tuple[Path, ...], output: str, device: str, limit_cpu: int | None, batch_size: int | None, force: bool):
     """Parse, embed, and store code and/or docs into a named database.
 
     Each -i directory is scanned automatically: source files and build system
@@ -747,7 +747,7 @@ def prepare(input_dirs: tuple[Path, ...], output: str, device: str, limit_cpu: i
 
     precision = "float16" if resolved_device == "cuda" else "float32"
 
-    click.echo(f"[prepare] device={resolved_device}  batch-size={batch_size}  precision={precision}")
+    click.echo(f"[build] device={resolved_device}  batch-size={batch_size}  precision={precision}")
 
     out_dir = CACHE_DIR / output
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -776,7 +776,7 @@ def prepare(input_dirs: tuple[Path, ...], output: str, device: str, limit_cpu: i
         click.echo("No supported source, build, or doc files found in any input directory.", err=True)
         sys.exit(1)
 
-    _logger.info("prepare: %d code file(s), %d doc file(s)", len(all_code_files), len(all_doc_files))
+    _logger.info("build: %d code file(s), %d doc file(s)", len(all_code_files), len(all_doc_files))
 
     db_path: Path | None = None
     ddb_path: Path | None = None
@@ -915,7 +915,7 @@ def prepare(input_dirs: tuple[Path, ...], output: str, device: str, limit_cpu: i
             t.start()
             threads.append(t)
 
-        click.echo(f"[prepare] parsing {len(to_process)} code file(s) + {len(to_process_docs)} doc file(s) concurrently...")
+        click.echo(f"[build] parsing {len(to_process)} code file(s) + {len(to_process_docs)} doc file(s) concurrently...")
 
         code_stored, docs_stored, successful_code, successful_docs = _consume_and_embed(
             q, num_producers, db_path, ddb_path, resolved_device, precision, batch_size
@@ -930,7 +930,7 @@ def prepare(input_dirs: tuple[Path, ...], output: str, device: str, limit_cpu: i
 
         if producer_errors:
             click.echo(
-                f"[prepare] {len(producer_errors)} file(s) failed to process.",
+                f"[build] {len(producer_errors)} file(s) failed to process.",
                 err=True,
             )
             sys.exit(1)
@@ -944,7 +944,7 @@ def prepare(input_dirs: tuple[Path, ...], output: str, device: str, limit_cpu: i
             ]
             upsert_manifest_rows_batch(db_path, rows)
             click.echo(f"  {code_stored} code chunks → {db_path}")
-            _logger.info("prepare: stored %d code chunks in %s", code_stored, db_path)
+            _logger.info("build: stored %d code chunks in %s", code_stored, db_path)
 
         if successful_docs and ddb_path:
             from .database import upsert_manifest_rows_batch
@@ -954,12 +954,12 @@ def prepare(input_dirs: tuple[Path, ...], output: str, device: str, limit_cpu: i
             ]
             upsert_manifest_rows_batch(ddb_path, rows)
             click.echo(f"  {docs_stored} doc sections → {ddb_path}")
-            _logger.info("prepare: stored %d doc sections in %s", docs_stored, ddb_path)
+            _logger.info("build: stored %d doc sections in %s", docs_stored, ddb_path)
 
     if not code_changed:
-        click.echo("[prepare] nothing changed (code)")
+        click.echo("[build] nothing changed (code)")
     if not docs_changed:
-        click.echo("[prepare] nothing changed (docs)")
+        click.echo("[build] nothing changed (docs)")
 
     version_cfg = {"embedding_model": "all-MiniLM-L6-v2"}
     with open(out_dir / "config.json", "w") as f:

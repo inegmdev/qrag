@@ -27,7 +27,7 @@ Point `qrag` at any directories containing code (`.c`/`.h`/`.cpp`) and/or docs (
 ### 2. Build the index
 
 ```bash
-qrag prepare \
+qrag build \
   -i /path/to/source/ \
   -i /path/to/docs/ \
   -o v1.0
@@ -116,7 +116,7 @@ Start your AI agent and ask natural questions about your codebase or documentati
 When source or docs are updated, run:
 
 ```bash
-qrag prepare -i /path/to/source/ -i /path/to/docs/ -o v1.1
+qrag build -i /path/to/source/ -i /path/to/docs/ -o v1.1
 qrag push v1.1
 ```
 
