@@ -101,6 +101,16 @@ class _JsonFormatter(_logging.Formatter):
         })
 
 
+# Antigravity CLI requires YAML frontmatter in SKILL.md for skill detection.
+# The description field is used for semantic intent matching (/qrag trigger).
+_ANTIGRAVITY_SKILL_FRONTMATTER = """\
+---
+name: qrag
+description: Search the local RAG database to answer questions about code or documentation. Use when the user asks about code, functions, symbols, API usage, or technical documentation from the indexed codebase.
+---
+
+"""
+
 QRAG_SKILL_CONTENT = """Search the local RAG database iteratively to answer a question about code or documentation.
 
 ## Workflow
@@ -125,8 +135,8 @@ Given: $ARGUMENTS (your question or topic)
 7. **Conclude**: Synthesize all findings into a clear answer. Cite source file paths, symbol names, doc sections, and page numbers. Flag any inconsistencies between docs and code.
 
 ## Available MCP tools
-- `search_code(query, top_k)` — semantic search over indexed code symbols
-- `search_docs(query, top_k)` — semantic search over indexed documentation
+- `search_code(query)` — semantic search over indexed code symbols (returns top 10)
+- `search_docs(query)` — semantic search over indexed documentation (returns top 10)
 - `list_symbols(pattern)` — list code symbols matching a glob pattern
 - `get_symbol(name)` — retrieve full source of a specific symbol
 """
@@ -245,8 +255,8 @@ def ai_active(versions: tuple[str, ...]):
 
 
 @ai.command("setup")
-@click.option("--ai", "agent", type=click.Choice(["gemini", "claude"]), help="AI tool to install for (required unless --global)")
-@click.option("--global", "global_install", is_flag=True, help="Install AI harness system-wide for all projects (both gemini and claude)")
+@click.option("--ai", "agent", type=click.Choice(["gemini", "claude", "antigravity"]), help="AI tool to install for (required unless --global)")
+@click.option("--global", "global_install", is_flag=True, help="Install AI harness system-wide for all projects (gemini, claude, and antigravity)")
 @click.option("--mcp-only", is_flag=True, help="Install MCP server only (skip /qrag skill)")
 @click.option("--skills-only", is_flag=True, help="Install /qrag skill only (skip MCP server)")
 def ai_setup(agent: str | None, global_install: bool, mcp_only: bool, skills_only: bool):
@@ -259,7 +269,7 @@ def ai_setup(agent: str | None, global_install: bool, mcp_only: bool, skills_onl
         sys.exit(1)
 
     if not global_install and not agent:
-        click.echo("Error: --ai=gemini|claude is required (or use --global)", err=True)
+        click.echo("Error: --ai=gemini|claude|antigravity is required (or use --global)", err=True)
         sys.exit(1)
 
     # Install MCP server (unless --skills-only)
@@ -279,7 +289,7 @@ def ai_setup(agent: str | None, global_install: bool, mcp_only: bool, skills_onl
 
 
 def _mcp_install(ai: str):
-    """Install MCP server config for Gemini or Claude."""
+    """Install MCP server config for Gemini, Claude, or Antigravity."""
     import shutil
     import subprocess
 
@@ -326,9 +336,16 @@ def _mcp_install(ai: str):
             click.echo("  Make sure Claude Code is installed and in your PATH", err=True)
             sys.exit(1)
 
+    elif ai == "antigravity":
+        # Antigravity has no CLI registration command; config is written directly.
+        config_file = Path.cwd() / ".agents" / "mcp_config.json"
+        _write_mcp_config(mcp_cmd, config_file)
+        click.echo("✓ Antigravity MCP server 'qrag' installed")
+        click.echo(f"  Config: {config_file}")
+
 
 def _detect_available_agents() -> list[str]:
-    """Detect which CLI agents (gemini, claude) are available."""
+    """Detect which CLI agents (gemini, claude, antigravity) are available."""
     import shutil
 
     available = []
@@ -336,7 +353,24 @@ def _detect_available_agents() -> list[str]:
         available.append("gemini")
     if shutil.which("claude"):
         available.append("claude")
+    if shutil.which("agy"):
+        available.append("antigravity")
     return available
+
+
+def _write_mcp_config(mcp_cmd: str, config_file: Path) -> None:
+    """Merge the qrag MCP server entry into an existing or new mcp_config.json."""
+    config_file.parent.mkdir(parents=True, exist_ok=True)
+    config: dict = {}
+    if config_file.exists():
+        with open(config_file) as f:
+            try:
+                config = json.load(f)
+            except json.JSONDecodeError:
+                config = {}
+    config.setdefault("mcpServers", {})["qrag"] = {"command": mcp_cmd, "args": []}
+    with open(config_file, "w") as f:
+        json.dump(config, f, indent=2)
 
 
 def _mcp_install_global_config(mcp_cmd: str, agent: str) -> bool:
@@ -395,6 +429,14 @@ def _mcp_install_global_config(mcp_cmd: str, agent: str) -> bool:
         click.echo(f"  Config: {config_file}")
         return True
 
+    elif agent == "antigravity":
+        # Antigravity shares a central MCP config at ~/.gemini/config/mcp_config.json
+        config_file = Path.home() / ".gemini" / "config" / "mcp_config.json"
+        _write_mcp_config(mcp_cmd, config_file)
+        click.echo("✓ Antigravity MCP server 'qrag' installed")
+        click.echo(f"  Config: {config_file}")
+        return True
+
     return False
 
 
@@ -409,8 +451,8 @@ def _mcp_install_global():
 
     available_agents = _detect_available_agents()
     if not available_agents:
-        click.echo("Error: No CLI agents found (gemini or claude)", err=True)
-        click.echo("Please install Gemini CLI or Claude Code first.", err=True)
+        click.echo("Error: No CLI agents found (gemini, claude, or antigravity)", err=True)
+        click.echo("Please install Gemini CLI, Claude Code, or Antigravity CLI first.", err=True)
         sys.exit(1)
 
     click.echo(f"Detected available agents: {', '.join(available_agents)}")
@@ -436,37 +478,53 @@ def _mcp_install_global():
 
 
 def _skills_install(ai: str, global_install: bool) -> None:
-    """Install qrag.md skill for a specific agent."""
+    """Install /qrag skill for a specific agent."""
     if ai == "claude":
         if global_install:
             cmd_dir = Path.home() / ".claude" / "commands"
         else:
             cmd_dir = Path.cwd() / ".claude" / "commands"
+        cmd_dir.mkdir(parents=True, exist_ok=True)
+        skill_file = cmd_dir / "qrag.md"
+        with open(skill_file, "w") as f:
+            f.write(QRAG_SKILL_CONTENT)
+
     elif ai == "gemini":
         if global_install:
             cmd_dir = Path.home() / ".gemini" / "commands"
         else:
             cmd_dir = Path.cwd() / ".gemini" / "commands"
+        cmd_dir.mkdir(parents=True, exist_ok=True)
+        skill_file = cmd_dir / "qrag.md"
+        with open(skill_file, "w") as f:
+            f.write(QRAG_SKILL_CONTENT)
+
+    elif ai == "antigravity":
+        # Antigravity skills live in a subdirectory named after the skill,
+        # with a required SKILL.md file inside.
+        if global_install:
+            skill_dir = Path.home() / ".gemini" / "antigravity-cli" / "skills" / "qrag"
+        else:
+            skill_dir = Path.cwd() / ".agents" / "skills" / "qrag"
+        skill_dir.mkdir(parents=True, exist_ok=True)
+        skill_file = skill_dir / "SKILL.md"
+        with open(skill_file, "w") as f:
+            f.write(_ANTIGRAVITY_SKILL_FRONTMATTER + QRAG_SKILL_CONTENT)
+
     else:
         click.echo(f"Error: Unknown AI tool '{ai}'", err=True)
         sys.exit(1)
-
-    cmd_dir.mkdir(parents=True, exist_ok=True)
-    skill_file = cmd_dir / "qrag.md"
-
-    with open(skill_file, "w") as f:
-        f.write(QRAG_SKILL_CONTENT)
 
     click.echo(f"✓ Installed /qrag skill for {ai}")
     click.echo(f"  File: {skill_file}")
 
 
 def _skills_install_global() -> None:
-    """Install qrag.md skill for all detected agents (global)."""
+    """Install /qrag skill for all detected agents (global)."""
     available_agents = _detect_available_agents()
     if not available_agents:
-        click.echo("Error: No CLI agents found (gemini or claude)", err=True)
-        click.echo("Please install Gemini CLI or Claude Code first.", err=True)
+        click.echo("Error: No CLI agents found (gemini, claude, or antigravity)", err=True)
+        click.echo("Please install Gemini CLI, Claude Code, or Antigravity CLI first.", err=True)
         sys.exit(1)
 
     click.echo(f"Detected available agents: {', '.join(available_agents)}")

@@ -109,7 +109,7 @@ Full authoritative list: [`docs/BACKLOG.md`](docs/BACKLOG.md). **IS1 and IS2 are
 | ~~**IS3**~~ | ~~Critical~~ | ~~Single active DB only~~ — resolved PR #16 |
 | ~~**IS4**~~ | ~~Critical~~ | ~~Doc chunks missing rich metadata~~ — resolved PR #17 |
 | ~~**IS5**~~ | ~~Critical~~ | ~~Code chunks missing rich metadata~~ — resolved PR #17 |
-| **GH#18** | High | Add Antigravity CLI support to `qrag ai setup` |
+| ~~**GH#18**~~ | ~~High~~ | ~~Add Antigravity CLI support~~ — resolved feat/gh18-antigravity-support (PR #22) |
 | **C2** | Critical | `db_path`/`ddb_path` can be `None` in code-only or docs-only `build` → `TypeError` |
 | **C3** | Critical | DB connections not closed on exception → fd exhaustion |
 | **H0** | High | Build-source relationship metadata (link cmake targets to their source files) |
@@ -130,7 +130,8 @@ Full authoritative list: [`docs/BACKLOG.md`](docs/BACKLOG.md). **IS1 and IS2 are
 | #16 | `feat/is3-multi-db-fanout` | Merged — multi-DB fan-out search (IS3) |
 | #17 | `feat/is4-is5-rich-metadata` | Merged — rich code + doc metadata (IS4, IS5) |
 | #19 | `refactor/rename-prepare-to-build` | Merged — renamed `prepare` → `build` |
-| #20 | `feat/is1-is2-rich-tui-report` | Open — Rich TUI progress bars + build report (IS1, IS2) |
+| #20 | `feat/is1-is2-rich-tui-report` | Merged — Rich TUI progress bars + build report (IS1, IS2) |
+| #22 | `feat/gh18-antigravity-support` | Open — Antigravity CLI (agy) support in `qrag ai setup` (GH#18) |
 
 ---
 
