@@ -10,9 +10,9 @@ When starting a new session, review this file and prefer working on higher-sever
 
 > **IS1–IS5 are user-declared top priorities**. Work on these before any other open item.
 
-- [ ] **IS1** `cli.py`, `embedder.py` — TUI is plain echo/print with no visual structure. Modernize `qrag build` (and all long-running commands) with rich progress bars (per-file chunking, per-batch embedding, per-batch DB write), live ETA, elapsed time display, and a final summary line. Recommended library: `rich` (already a transitive dep via sentence-transformers — check before adding). Each pipeline stage (scan → chunk → embed → store) should have its own progress bar so the user always knows where the bottleneck is.
+- [x] **IS1** `cli.py` — Rich TUI with three transient progress bars (Overall / Parse / Embed), adaptive rolling-average ETA, and a uv-style single-line summary on completion. Fixed in feat/is1-is2-rich-tui-report: `rich>=13.0` added to `[build]` extras; disabled when `--verbose`.
 
-- [ ] **IS2** `cli.py` — No post-prepare audit report. After `qrag build` completes, write a human-readable report to `<output>/prepare-report.txt` (and print a summary to stdout) containing: list of every file processed, its detected language, number of chunks produced, time taken per file; aggregate stats per language; total wall-clock time; list of files skipped (unsupported extension, parse error, zero chunks); DB sizes. This lets the user verify what entered the database and what was silently dropped.
+- [x] **IS2** `cli.py` — Post-build audit report. Fixed in feat/is1-is2-rich-tui-report: `build-report.txt` written to `~/.qrag/<version>/` on every build with SUMMARY, BY LANGUAGE, CODE FILES, DOC FILES, and SKIPPED FILES sections; per-file elapsed time measured in workers.
 
 - [x] **IS3** `database.py`, `mcp_server.py`, `cli.py` — Only one active database at a time. Fixed in PR #16: `active_version` (str) → `active_versions` (list) with auto-migration; `qrag ai active [v1 v2 …]` replaces the list; all MCP tools fan-out across active DBs via ThreadPoolExecutor, merge by score, dedup. `config.py` gains `add_active_version()`, `code_db_paths()`, `docs_db_paths()`.
 

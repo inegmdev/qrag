@@ -34,8 +34,8 @@
 | `qrag search code/docs/symbol` — CLI search | ✅ Implemented |
 | Automatic error log on failure (`~/.qrag/logs/`) | ✅ PR #8 |
 | `uv` as primary install method | ✅ PR #8 |
-| Rich TUI with progress bars + ETA | ❌ IS1 — top priority |
-| Post-build audit report file | ❌ IS2 — top priority |
+| Rich TUI with progress bars + ETA | ✅ PR #? (feat/is1-is2-rich-tui-report) |
+| Post-build audit report file | ✅ PR #? (feat/is1-is2-rich-tui-report) |
 | Multi-database search (fan-out across N active DBs) | ✅ PR #16 |
 | Rich doc metadata (name, revision, status, page, section hierarchy) | ✅ PR #17 |
 | Rich code metadata (parent block, call depth, chunk index within parent) | ✅ PR #17 |
@@ -104,8 +104,8 @@ Full authoritative list: [`docs/BACKLOG.md`](docs/BACKLOG.md). **IS1 and IS2 are
 
 | ID | Severity | Summary |
 |----|----------|---------|
-| **IS1** | Critical | Ugly TUI — add rich progress bars + ETA to `build` and all long-running commands |
-| **IS2** | Critical | No post-prepare report — write `prepare-report.txt` with per-file language, chunks, time |
+| ~~**IS1**~~ | ~~Critical~~ | ~~Ugly TUI~~ — resolved feat/is1-is2-rich-tui-report |
+| ~~**IS2**~~ | ~~Critical~~ | ~~No post-build report~~ — resolved feat/is1-is2-rich-tui-report |
 | ~~**IS3**~~ | ~~Critical~~ | ~~Single active DB only~~ — resolved PR #16 |
 | ~~**IS4**~~ | ~~Critical~~ | ~~Doc chunks missing rich metadata~~ — resolved PR #17 |
 | ~~**IS5**~~ | ~~Critical~~ | ~~Code chunks missing rich metadata~~ — resolved PR #17 |
