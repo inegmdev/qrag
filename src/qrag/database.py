@@ -44,60 +44,64 @@ def _open_code(db_path: Path) -> sqlite3.Connection:
 def init_code_db(db_path: Path) -> None:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     db = _open(db_path)
-    db.executescript(f"""
-        CREATE TABLE IF NOT EXISTS code_chunks (
-            id          INTEGER PRIMARY KEY,
-            symbol_name TEXT,
-            file_path   TEXT,
-            file_name   TEXT,
-            line_start  INTEGER,
-            line_end    INTEGER,
-            code_text   TEXT,
-            type        TEXT,
-            language    TEXT,
-            parent_name TEXT,
-            call_depth  INTEGER DEFAULT 0,
-            chunk_index INTEGER DEFAULT 0
-        );
-        CREATE TABLE IF NOT EXISTS symbols (
-            id          INTEGER PRIMARY KEY,
-            name        TEXT UNIQUE,
-            type        TEXT,
-            language    TEXT,
-            file_path   TEXT,
-            line_number INTEGER,
-            chunk_id    INTEGER REFERENCES code_chunks(id)
-        );
-        CREATE VIRTUAL TABLE IF NOT EXISTS vec_code USING vec0(
-            chunk_id INTEGER,
-            embedding float[{EMBEDDING_DIM}] distance_metric=cosine
-        );
-        CREATE TABLE IF NOT EXISTS file_manifest (
-            rel_path   TEXT NOT NULL,
-            input_root TEXT NOT NULL,
-            mtime      REAL NOT NULL,
-            sha256     TEXT NOT NULL,
-            PRIMARY KEY (rel_path, input_root)
-        );
-    """)
-    db.commit()
-    db.close()
+    try:
+        db.executescript(f"""
+            CREATE TABLE IF NOT EXISTS code_chunks (
+                id          INTEGER PRIMARY KEY,
+                symbol_name TEXT,
+                file_path   TEXT,
+                file_name   TEXT,
+                line_start  INTEGER,
+                line_end    INTEGER,
+                code_text   TEXT,
+                type        TEXT,
+                language    TEXT,
+                parent_name TEXT,
+                call_depth  INTEGER DEFAULT 0,
+                chunk_index INTEGER DEFAULT 0
+            );
+            CREATE TABLE IF NOT EXISTS symbols (
+                id          INTEGER PRIMARY KEY,
+                name        TEXT UNIQUE,
+                type        TEXT,
+                language    TEXT,
+                file_path   TEXT,
+                line_number INTEGER,
+                chunk_id    INTEGER REFERENCES code_chunks(id)
+            );
+            CREATE VIRTUAL TABLE IF NOT EXISTS vec_code USING vec0(
+                chunk_id INTEGER,
+                embedding float[{EMBEDDING_DIM}] distance_metric=cosine
+            );
+            CREATE TABLE IF NOT EXISTS file_manifest (
+                rel_path   TEXT NOT NULL,
+                input_root TEXT NOT NULL,
+                mtime      REAL NOT NULL,
+                sha256     TEXT NOT NULL,
+                PRIMARY KEY (rel_path, input_root)
+            );
+        """)
+        db.commit()
+    finally:
+        db.close()
 
 
 def delete_chunks_for_file(db_path: Path, file_path: str) -> None:
     """Remove all chunks and vectors belonging to a file (for upsert on re-run)."""
     db = _open_code(db_path)
-    rows = db.execute(
-        "SELECT id FROM code_chunks WHERE file_path = ?", (file_path,)
-    ).fetchall()
-    ids = [r["id"] for r in rows]
-    if ids:
-        placeholders = ",".join("?" * len(ids))
-        db.execute(f"DELETE FROM vec_code WHERE chunk_id IN ({placeholders})", ids)
-        db.execute(f"DELETE FROM symbols WHERE chunk_id IN ({placeholders})", ids)
-        db.execute(f"DELETE FROM code_chunks WHERE id IN ({placeholders})", ids)
-    db.commit()
-    db.close()
+    try:
+        rows = db.execute(
+            "SELECT id FROM code_chunks WHERE file_path = ?", (file_path,)
+        ).fetchall()
+        ids = [r["id"] for r in rows]
+        if ids:
+            placeholders = ",".join("?" * len(ids))
+            db.execute(f"DELETE FROM vec_code WHERE chunk_id IN ({placeholders})", ids)
+            db.execute(f"DELETE FROM symbols WHERE chunk_id IN ({placeholders})", ids)
+            db.execute(f"DELETE FROM code_chunks WHERE id IN ({placeholders})", ids)
+        db.commit()
+    finally:
+        db.close()
 
 
 def insert_code_chunk(
@@ -117,30 +121,32 @@ def insert_code_chunk(
     from pathlib import Path as _Path
     file_name = _Path(file_path).name
     db = _open_code(db_path)
-    cur = db.execute(
-        """
-        INSERT INTO code_chunks
-          (symbol_name, file_path, file_name, line_start, line_end, code_text,
-           type, language, parent_name, call_depth, chunk_index)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        (symbol_name, file_path, file_name, line_start, line_end, code_text,
-         chunk_type, language, parent_name, call_depth, chunk_index),
-    )
-    chunk_id = cur.lastrowid
+    try:
+        cur = db.execute(
+            """
+            INSERT INTO code_chunks
+              (symbol_name, file_path, file_name, line_start, line_end, code_text,
+               type, language, parent_name, call_depth, chunk_index)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (symbol_name, file_path, file_name, line_start, line_end, code_text,
+             chunk_type, language, parent_name, call_depth, chunk_index),
+        )
+        chunk_id = cur.lastrowid
 
-    db.execute(
-        "INSERT OR REPLACE INTO symbols (name, type, language, file_path, line_number, chunk_id) VALUES (?,?,?,?,?,?)",
-        (symbol_name, chunk_type, language, file_path, line_start, chunk_id),
-    )
+        db.execute(
+            "INSERT OR REPLACE INTO symbols (name, type, language, file_path, line_number, chunk_id) VALUES (?,?,?,?,?,?)",
+            (symbol_name, chunk_type, language, file_path, line_start, chunk_id),
+        )
 
-    db.execute(
-        "INSERT INTO vec_code (chunk_id, embedding) VALUES (?, ?)",
-        (chunk_id, to_blob(embedding)),
-    )
+        db.execute(
+            "INSERT INTO vec_code (chunk_id, embedding) VALUES (?, ?)",
+            (chunk_id, to_blob(embedding)),
+        )
 
-    db.commit()
-    db.close()
+        db.commit()
+    finally:
+        db.close()
     return chunk_id
 
 
@@ -262,16 +268,18 @@ def upsert_manifest_rows_batch(
 
 def get_symbol(db_path: Path, name: str) -> dict | None:
     db = _open_code(db_path)
-    row = db.execute(
-        """
-        SELECT c.symbol_name, c.type, c.language, c.file_path, c.line_start, c.line_end, c.code_text
-        FROM symbols s
-        JOIN code_chunks c ON c.id = s.chunk_id
-        WHERE s.name = ?
-        """,
-        (name,),
-    ).fetchone()
-    db.close()
+    try:
+        row = db.execute(
+            """
+            SELECT c.symbol_name, c.type, c.language, c.file_path, c.line_start, c.line_end, c.code_text
+            FROM symbols s
+            JOIN code_chunks c ON c.id = s.chunk_id
+            WHERE s.name = ?
+            """,
+            (name,),
+        ).fetchone()
+    finally:
+        db.close()
     if row is None:
         return None
     return dict(row)
@@ -279,24 +287,30 @@ def get_symbol(db_path: Path, name: str) -> dict | None:
 
 def list_symbols(db_path: Path, pattern: str = "", limit: int = 200) -> list[dict[str, Any]]:
     db = _open_code(db_path)
-    if pattern:
-        query = """
-            SELECT name, type, language, file_path, line_number
-            FROM symbols
-            WHERE name LIKE ?
-            ORDER BY name
-            LIMIT ?
-        """
-        rows = db.execute(query, (f"%{pattern}%", limit)).fetchall()
-    else:
-        query = """
-            SELECT name, type, language, file_path, line_number
-            FROM symbols
-            ORDER BY name
-            LIMIT ?
-        """
-        rows = db.execute(query, (limit,)).fetchall()
-    db.close()
+    try:
+        if pattern:
+            rows = db.execute(
+                """
+                SELECT name, type, language, file_path, line_number
+                FROM symbols
+                WHERE name LIKE ?
+                ORDER BY name
+                LIMIT ?
+                """,
+                (f"%{pattern}%", limit),
+            ).fetchall()
+        else:
+            rows = db.execute(
+                """
+                SELECT name, type, language, file_path, line_number
+                FROM symbols
+                ORDER BY name
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+    finally:
+        db.close()
 
     results = []
     for row in rows:
@@ -313,38 +327,40 @@ def list_symbols(db_path: Path, pattern: str = "", limit: int = 200) -> list[dic
 def init_docs_db(db_path: Path) -> None:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     db = _open(db_path)
-    db.executescript(f"""
-        CREATE TABLE IF NOT EXISTS doc_sections (
-            id            INTEGER PRIMARY KEY,
-            source_path   TEXT,
-            doc_type      TEXT,
-            chapter       INTEGER,
-            section       INTEGER,
-            subsection    TEXT,
-            title         TEXT,
-            content       TEXT,
-            page_range    TEXT,
-            feature_tags  TEXT,
-            doc_name      TEXT,
-            doc_revision  TEXT,
-            doc_status    TEXT,
-            word_count    INTEGER,
-            fig_table_refs TEXT
-        );
-        CREATE VIRTUAL TABLE IF NOT EXISTS vec_docs USING vec0(
-            section_id INTEGER,
-            embedding float[{EMBEDDING_DIM}] distance_metric=cosine
-        );
-        CREATE TABLE IF NOT EXISTS file_manifest (
-            rel_path   TEXT NOT NULL,
-            input_root TEXT NOT NULL,
-            mtime      REAL NOT NULL,
-            sha256     TEXT NOT NULL,
-            PRIMARY KEY (rel_path, input_root)
-        );
-    """)
-    db.commit()
-    db.close()
+    try:
+        db.executescript(f"""
+            CREATE TABLE IF NOT EXISTS doc_sections (
+                id            INTEGER PRIMARY KEY,
+                source_path   TEXT,
+                doc_type      TEXT,
+                chapter       INTEGER,
+                section       INTEGER,
+                subsection    TEXT,
+                title         TEXT,
+                content       TEXT,
+                page_range    TEXT,
+                feature_tags  TEXT,
+                doc_name      TEXT,
+                doc_revision  TEXT,
+                doc_status    TEXT,
+                word_count    INTEGER,
+                fig_table_refs TEXT
+            );
+            CREATE VIRTUAL TABLE IF NOT EXISTS vec_docs USING vec0(
+                section_id INTEGER,
+                embedding float[{EMBEDDING_DIM}] distance_metric=cosine
+            );
+            CREATE TABLE IF NOT EXISTS file_manifest (
+                rel_path   TEXT NOT NULL,
+                input_root TEXT NOT NULL,
+                mtime      REAL NOT NULL,
+                sha256     TEXT NOT NULL,
+                PRIMARY KEY (rel_path, input_root)
+            );
+        """)
+        db.commit()
+    finally:
+        db.close()
 
 
 def load_manifest(db_path: Path) -> dict[tuple[str, str], tuple[float, str]]:
@@ -352,10 +368,12 @@ def load_manifest(db_path: Path) -> dict[tuple[str, str], tuple[float, str]]:
     if not db_path.exists():
         return {}
     db = _open(db_path)
-    rows = db.execute(
-        "SELECT input_root, rel_path, mtime, sha256 FROM file_manifest"
-    ).fetchall()
-    db.close()
+    try:
+        rows = db.execute(
+            "SELECT input_root, rel_path, mtime, sha256 FROM file_manifest"
+        ).fetchall()
+    finally:
+        db.close()
     return {(r["input_root"], r["rel_path"]): (r["mtime"], r["sha256"]) for r in rows}
 
 
@@ -363,37 +381,43 @@ def upsert_manifest_row(
     db_path: Path, rel_path: str, input_root: str, mtime: float, sha256: str
 ) -> None:
     db = _open(db_path)
-    db.execute(
-        "INSERT OR REPLACE INTO file_manifest (rel_path, input_root, mtime, sha256) VALUES (?,?,?,?)",
-        (rel_path, input_root, mtime, sha256),
-    )
-    db.commit()
-    db.close()
+    try:
+        db.execute(
+            "INSERT OR REPLACE INTO file_manifest (rel_path, input_root, mtime, sha256) VALUES (?,?,?,?)",
+            (rel_path, input_root, mtime, sha256),
+        )
+        db.commit()
+    finally:
+        db.close()
 
 
 def delete_manifest_row(db_path: Path, rel_path: str, input_root: str) -> None:
     db = _open(db_path)
-    db.execute(
-        "DELETE FROM file_manifest WHERE rel_path = ? AND input_root = ?",
-        (rel_path, input_root),
-    )
-    db.commit()
-    db.close()
+    try:
+        db.execute(
+            "DELETE FROM file_manifest WHERE rel_path = ? AND input_root = ?",
+            (rel_path, input_root),
+        )
+        db.commit()
+    finally:
+        db.close()
 
 
 def delete_sections_for_source(db_path: Path, source_path: str) -> None:
     """Remove all doc_sections and vectors for a source file (upsert support)."""
     db = _open_docs(db_path)
-    rows = db.execute(
-        "SELECT id FROM doc_sections WHERE source_path = ?", (source_path,)
-    ).fetchall()
-    ids = [r["id"] for r in rows]
-    if ids:
-        placeholders = ",".join("?" * len(ids))
-        db.execute(f"DELETE FROM vec_docs WHERE section_id IN ({placeholders})", ids)
-        db.execute(f"DELETE FROM doc_sections WHERE id IN ({placeholders})", ids)
-    db.commit()
-    db.close()
+    try:
+        rows = db.execute(
+            "SELECT id FROM doc_sections WHERE source_path = ?", (source_path,)
+        ).fetchall()
+        ids = [r["id"] for r in rows]
+        if ids:
+            placeholders = ",".join("?" * len(ids))
+            db.execute(f"DELETE FROM vec_docs WHERE section_id IN ({placeholders})", ids)
+            db.execute(f"DELETE FROM doc_sections WHERE id IN ({placeholders})", ids)
+        db.commit()
+    finally:
+        db.close()
 
 
 def insert_doc_section(
@@ -415,47 +439,51 @@ def insert_doc_section(
     fig_table_refs: str = "",
 ) -> int:
     db = _open_docs(db_path)
-    cur = db.execute(
-        """
-        INSERT INTO doc_sections
-          (source_path, doc_type, chapter, section, subsection,
-           title, content, page_range, feature_tags,
-           doc_name, doc_revision, doc_status, word_count, fig_table_refs)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-        """,
-        (source_path, doc_type, chapter, section, subsection,
-         title, content, page_range, feature_tags,
-         doc_name, doc_revision, doc_status, word_count, fig_table_refs),
-    )
-    section_id = cur.lastrowid
-    db.execute(
-        "INSERT INTO vec_docs (section_id, embedding) VALUES (?, ?)",
-        (section_id, to_blob(embedding)),
-    )
-    db.commit()
-    db.close()
+    try:
+        cur = db.execute(
+            """
+            INSERT INTO doc_sections
+              (source_path, doc_type, chapter, section, subsection,
+               title, content, page_range, feature_tags,
+               doc_name, doc_revision, doc_status, word_count, fig_table_refs)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            """,
+            (source_path, doc_type, chapter, section, subsection,
+             title, content, page_range, feature_tags,
+             doc_name, doc_revision, doc_status, word_count, fig_table_refs),
+        )
+        section_id = cur.lastrowid
+        db.execute(
+            "INSERT INTO vec_docs (section_id, embedding) VALUES (?, ?)",
+            (section_id, to_blob(embedding)),
+        )
+        db.commit()
+    finally:
+        db.close()
     return section_id
 
 
 def search_docs(db_path: Path, query_embedding: list[float], top_k: int = 5) -> list[dict[str, Any]]:
     db = _open_docs(db_path)
-    rows = db.execute(
-        """
-        SELECT
-            d.source_path, d.doc_type, d.doc_name, d.doc_revision, d.doc_status,
-            d.chapter, d.section, d.subsection, d.title,
-            d.content, d.page_range, d.feature_tags,
-            d.word_count, d.fig_table_refs,
-            v.distance
-        FROM vec_docs v
-        JOIN doc_sections d ON d.id = v.section_id
-        WHERE v.embedding MATCH ?
-          AND k = ?
-        ORDER BY v.distance
-        """,
-        (to_blob(query_embedding), top_k),
-    ).fetchall()
-    db.close()
+    try:
+        rows = db.execute(
+            """
+            SELECT
+                d.source_path, d.doc_type, d.doc_name, d.doc_revision, d.doc_status,
+                d.chapter, d.section, d.subsection, d.title,
+                d.content, d.page_range, d.feature_tags,
+                d.word_count, d.fig_table_refs,
+                v.distance
+            FROM vec_docs v
+            JOIN doc_sections d ON d.id = v.section_id
+            WHERE v.embedding MATCH ?
+              AND k = ?
+            ORDER BY v.distance
+            """,
+            (to_blob(query_embedding), top_k),
+        ).fetchall()
+    finally:
+        db.close()
 
     results = []
     for row in rows:
@@ -484,30 +512,32 @@ def search_docs(db_path: Path, query_embedding: list[float], top_k: int = 5) -> 
 
 def search_code(db_path: Path, query_embedding: list[float], top_k: int = 5) -> list[dict[str, Any]]:
     db = _open_code(db_path)
-    rows = db.execute(
-        """
-        SELECT
-            c.symbol_name,
-            c.file_path,
-            c.file_name,
-            c.line_start,
-            c.line_end,
-            c.code_text,
-            c.type,
-            c.language,
-            c.parent_name,
-            c.call_depth,
-            c.chunk_index,
-            v.distance
-        FROM vec_code v
-        JOIN code_chunks c ON c.id = v.chunk_id
-        WHERE v.embedding MATCH ?
-          AND k = ?
-        ORDER BY v.distance
-        """,
-        (to_blob(query_embedding), top_k),
-    ).fetchall()
-    db.close()
+    try:
+        rows = db.execute(
+            """
+            SELECT
+                c.symbol_name,
+                c.file_path,
+                c.file_name,
+                c.line_start,
+                c.line_end,
+                c.code_text,
+                c.type,
+                c.language,
+                c.parent_name,
+                c.call_depth,
+                c.chunk_index,
+                v.distance
+            FROM vec_code v
+            JOIN code_chunks c ON c.id = v.chunk_id
+            WHERE v.embedding MATCH ?
+              AND k = ?
+            ORDER BY v.distance
+            """,
+            (to_blob(query_embedding), top_k),
+        ).fetchall()
+    finally:
+        db.close()
 
     results = []
     for row in rows:
