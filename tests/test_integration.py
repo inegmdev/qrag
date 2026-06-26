@@ -1,4 +1,8 @@
-"""Integration test: build fixture files, then verify search results."""
+"""Integration test: build fixture files, then verify search results.
+
+Skipped automatically when tree-sitter-language-pack is not installed
+(i.e. base install without the [build] extras).
+"""
 import shutil
 from pathlib import Path
 
@@ -6,6 +10,8 @@ import pytest
 import qrag.cli
 import qrag.config
 from click.testing import CliRunner
+
+pytest.importorskip("tree_sitter_language_pack", reason="requires qrag[build] extras")
 
 from qrag.cli import cli
 from qrag.database import init_code_db, upsert_manifest_row
