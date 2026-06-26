@@ -101,6 +101,16 @@ class _JsonFormatter(_logging.Formatter):
         })
 
 
+# Antigravity CLI requires YAML frontmatter in SKILL.md for skill detection.
+# The description field is used for semantic intent matching (/qrag trigger).
+_ANTIGRAVITY_SKILL_FRONTMATTER = """\
+---
+name: qrag
+description: Search the local RAG database to answer questions about code or documentation. Use when the user asks about code, functions, symbols, API usage, or technical documentation from the indexed codebase.
+---
+
+"""
+
 QRAG_SKILL_CONTENT = """Search the local RAG database iteratively to answer a question about code or documentation.
 
 ## Workflow
@@ -499,7 +509,7 @@ def _skills_install(ai: str, global_install: bool) -> None:
         skill_dir.mkdir(parents=True, exist_ok=True)
         skill_file = skill_dir / "SKILL.md"
         with open(skill_file, "w") as f:
-            f.write(QRAG_SKILL_CONTENT)
+            f.write(_ANTIGRAVITY_SKILL_FRONTMATTER + QRAG_SKILL_CONTENT)
 
     else:
         click.echo(f"Error: Unknown AI tool '{ai}'", err=True)
