@@ -493,7 +493,7 @@ def _skills_install(ai: str, global_install: bool) -> None:
         # Antigravity skills live in a subdirectory named after the skill,
         # with a required SKILL.md file inside.
         if global_install:
-            skill_dir = Path.home() / ".gemini" / "config" / "skills" / "qrag"
+            skill_dir = Path.home() / ".gemini" / "antigravity-cli" / "skills" / "qrag"
         else:
             skill_dir = Path.cwd() / ".agents" / "skills" / "qrag"
         skill_dir.mkdir(parents=True, exist_ok=True)
