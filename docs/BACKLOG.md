@@ -56,9 +56,9 @@ When starting a new session, review this file and prefer working on higher-sever
 
 - [ ] **GH#30** `cli.py` — No pre-build visualization of existing DB (size, file count, last-built) or delta preview (N changed, M new); no confirm-before-proceed prompt. [GitHub](https://github.com/inegmdev/qrag/issues/30)
 
-- [ ] **GH#31** `cli.py` — No resume-last-build: interrupted builds lose session state (input paths, device, progress); next run starts from scratch with no prompt to resume. [GitHub](https://github.com/inegmdev/qrag/issues/31)
+- [x] **GH#31** `cli.py` — No resume-last-build: interrupted builds lose session state (input paths, device, progress); next run starts from scratch with no prompt to resume. Fixed in `feat/gh31-gh32-build-resume`: writes `<out-dir>/.qrag-build-state.json` after delta computation; detects it on next run with file count + %, shows resume prompt; `--no-resume` skips; non-TTY auto-resumes; state cleared on success and `--force`. [GitHub](https://github.com/inegmdev/qrag/issues/31)
 
-- [ ] **GH#32** `cli.py:1077-1085` — "Roots differ" restriction blocks incremental addition of new `-i` directories; forces `--force` full wipe even though existing data is valid. Tracked as M5 below. [GitHub](https://github.com/inegmdev/qrag/issues/32)
+- [x] **GH#32** `cli.py:1077-1085` — "Roots differ" restriction blocks incremental addition of new `-i` directories; forces `--force` full wipe even though existing data is valid. Fixed in `feat/gh31-gh32-build-resume`: removed the fatal check for both code and docs manifests; dropped roots are warned and cleaned up incrementally; new roots are processed as new files via existing delta logic. [GitHub](https://github.com/inegmdev/qrag/issues/32)
 
 - [x] **GH#13** — Optimize Dependencies: Consumer vs. Builder Roles with Role-Based Installation. Split `pyproject.toml` into `dependencies` (consumer: click, sqlite-vec only) and `[project.optional-dependencies]` build/build.gpu/full groups; add `_ensure_builder_deps()` lazy-check in `build` command that detects GPU and prints actionable install instructions per package manager. [GitHub](https://github.com/inegmdev/qrag/issues/13)
 
