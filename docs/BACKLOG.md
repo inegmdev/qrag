@@ -10,9 +10,9 @@ When starting a new session, review this file and prefer working on higher-sever
 
 > **IS1–IS5 are user-declared top priorities**. Work on these before any other open item.
 
-- [ ] **IS1** `cli.py`, `embedder.py` — TUI is plain echo/print with no visual structure. Modernize `qrag build` (and all long-running commands) with rich progress bars (per-file chunking, per-batch embedding, per-batch DB write), live ETA, elapsed time display, and a final summary line. Recommended library: `rich` (already a transitive dep via sentence-transformers — check before adding). Each pipeline stage (scan → chunk → embed → store) should have its own progress bar so the user always knows where the bottleneck is.
+- [x] **IS1** `cli.py` — Rich TUI with three transient progress bars (Overall / Parse / Embed), adaptive rolling-average ETA, and a uv-style single-line summary on completion. Fixed in feat/is1-is2-rich-tui-report: `rich>=13.0` added to `[build]` extras; disabled when `--verbose`.
 
-- [ ] **IS2** `cli.py` — No post-prepare audit report. After `qrag build` completes, write a human-readable report to `<output>/prepare-report.txt` (and print a summary to stdout) containing: list of every file processed, its detected language, number of chunks produced, time taken per file; aggregate stats per language; total wall-clock time; list of files skipped (unsupported extension, parse error, zero chunks); DB sizes. This lets the user verify what entered the database and what was silently dropped.
+- [x] **IS2** `cli.py` — Post-build audit report. Fixed in feat/is1-is2-rich-tui-report: `build-report.txt` written to `~/.qrag/<version>/` on every build with SUMMARY, BY LANGUAGE, CODE FILES, DOC FILES, and SKIPPED FILES sections; per-file elapsed time measured in workers.
 
 - [x] **IS3** `database.py`, `mcp_server.py`, `cli.py` — Only one active database at a time. Fixed in PR #16: `active_version` (str) → `active_versions` (list) with auto-migration; `qrag ai active [v1 v2 …]` replaces the list; all MCP tools fan-out across active DBs via ThreadPoolExecutor, merge by score, dedup. `config.py` gains `add_active_version()`, `code_db_paths()`, `docs_db_paths()`.
 
@@ -47,6 +47,8 @@ When starting a new session, review this file and prefer working on higher-sever
 - [ ] **H6** `config.py:29-31` — Malformed `~/.qrag/config.json` raises an uncaught `JSONDecodeError`, breaking every qrag command until the file is manually deleted.
 
 - [x] **GH#13** — Optimize Dependencies: Consumer vs. Builder Roles with Role-Based Installation. Split `pyproject.toml` into `dependencies` (consumer: click, sqlite-vec only) and `[project.optional-dependencies]` build/build.gpu/full groups; add `_ensure_builder_deps()` lazy-check in `build` command that detects GPU and prints actionable install instructions per package manager. [GitHub](https://github.com/inegmdev/qrag/issues/13)
+
+- [ ] **GH#18** `cli.py:274-391,431-481` — Add Antigravity CLI support alongside Gemini and Claude. Extend `qrag ai setup` to detect the `antigravity` binary, register the MCP server, and install the `/qrag` skill to the correct Antigravity directory. Affects `_detect_available_agents()`, `_mcp_install()`, `_mcp_install_global_config()`, `_skills_install()`, and `_skills_install_global()`. [GitHub](https://github.com/inegmdev/qrag/issues/18)
 
 - [x] **H7** `cli.py:main()` — Restructured to never re-raise. `KeyboardInterrupt`/`Abort` → "Interrupted." + exit 130. `BaseException` → "Error: <message>" + exit 1. Raw tracebacks no longer reach the terminal; full trace still written to `~/.qrag/logs/`.
 
