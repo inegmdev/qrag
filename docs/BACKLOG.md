@@ -48,6 +48,8 @@ When starting a new session, review this file and prefer working on higher-sever
 
 - [x] **GH#13** — Optimize Dependencies: Consumer vs. Builder Roles with Role-Based Installation. Split `pyproject.toml` into `dependencies` (consumer: click, sqlite-vec only) and `[project.optional-dependencies]` build/build.gpu/full groups; add `_ensure_builder_deps()` lazy-check in `build` command that detects GPU and prints actionable install instructions per package manager. [GitHub](https://github.com/inegmdev/qrag/issues/13)
 
+- [ ] **GH#18** `cli.py:274-391,431-481` — Add Antigravity CLI support alongside Gemini and Claude. Extend `qrag ai setup` to detect the `antigravity` binary, register the MCP server, and install the `/qrag` skill to the correct Antigravity directory. Affects `_detect_available_agents()`, `_mcp_install()`, `_mcp_install_global_config()`, `_skills_install()`, and `_skills_install_global()`. [GitHub](https://github.com/inegmdev/qrag/issues/18)
+
 - [x] **H7** `cli.py:main()` — Restructured to never re-raise. `KeyboardInterrupt`/`Abort` → "Interrupted." + exit 130. `BaseException` → "Error: <message>" + exit 1. Raw tracebacks no longer reach the terminal; full trace still written to `~/.qrag/logs/`.
 
 ---
