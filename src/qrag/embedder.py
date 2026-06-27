@@ -38,29 +38,66 @@ def _get_model(device: str = "cpu"):
         from sentence_transformers import SentenceTransformer
         if _BUNDLED_MODEL.is_dir():
             model_source = str(_BUNDLED_MODEL)
+            downloading = False
         else:
             # Bundled model absent (e.g. git+ install without pre-built wheel).
             # Fall back to HuggingFace download; give a clear message on failure.
             model_source = MODEL_NAME
+            downloading = True
         try:
             _model = SentenceTransformer(model_source, device=device)
         except Exception as exc:
-            _raise_model_load_error(exc)
+            _raise_model_load_error(exc, downloading=downloading)
         _model_device = device
     return _model
 
 
-def _raise_model_load_error(exc: Exception) -> None:
-    msg = str(exc).lower()
-    if any(k in msg for k in ("ssl", "certificate", "cert", "proxy")):
+def _chain_has_ssl_error(exc: BaseException) -> bool:
+    """Walk the full exception chain to detect SSL/certificate errors."""
+    import ssl
+    seen: set[int] = set()
+    e: BaseException | None = exc
+    while e is not None and id(e) not in seen:
+        seen.add(id(e))
+        if isinstance(e, ssl.SSLError):
+            return True
+        msg = str(e).lower()
+        if any(k in msg for k in ("ssl", "certificate", "cert verify", "certificate_verify_failed")):
+            return True
+        e = e.__cause__ or e.__context__
+    return False
+
+
+def _raise_model_load_error(exc: Exception, *, downloading: bool = False) -> None:
+    # Walk the full exception chain so we catch SSL errors that HuggingFace's
+    # retry loop swallows — after exhausting retries, huggingface_hub raises
+    # "Cannot send a request, as the client has been closed" which contains no
+    # SSL keyword even though the root cause was an SSL cert failure.
+    is_ssl = _chain_has_ssl_error(exc)
+
+    # If we were fetching from HuggingFace and got any network/connection
+    # error, treat it as a potential SSL/proxy issue — the retry machinery
+    # may have discarded the original SSL exception.
+    if not is_ssl and downloading:
+        msg = str(exc).lower()
+        is_ssl = any(k in msg for k in (
+            "cannot send a request", "client has been closed",
+            "connection error", "connection refused", "timeout",
+            "proxy", "network",
+        ))
+
+    if is_ssl:
         raise RuntimeError(
-            f"Failed to download the embedding model due to an SSL/certificate error:\n  {exc}\n\n"
+            f"Failed to download the embedding model due to an SSL/network error:\n  {exc}\n\n"
             "Options to fix this:\n"
             "  1. Install the correct CA certificate for your network and retry.\n"
-            "  2. Set the REQUESTS_CA_BUNDLE environment variable to your CA bundle path.\n"
-            "  3. Download the model manually on a machine with internet access:\n"
+            "  2. Set the REQUESTS_CA_BUNDLE or CURL_CA_BUNDLE environment variable\n"
+            "     to the path of your corporate/proxy CA bundle, then retry.\n"
+            "  3. Download the model on a machine with unrestricted internet access:\n"
             "       python scripts/download_model.py\n"
-            "     Then copy src/qrag/models/ into your qrag installation directory."
+            "     Then copy src/qrag/models/ into your qrag installation directory.\n"
+            "  4. Set TRANSFORMERS_OFFLINE=1 and HF_DATASETS_OFFLINE=1 after placing\n"
+            "     the model in the bundled models/ directory."
         ) from None
     raise RuntimeError(
         f"Failed to load the embedding model: {exc}\n\n"
