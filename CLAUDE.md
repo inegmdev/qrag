@@ -82,7 +82,15 @@ Whenever the user asks about the backlog, what's next, or what issues exist:
 - **Never push directly to `main`** without explicit user confirmation.
 - **Always create a feature branch** from `main` for each fix or feature.
 - **Open a PR** for review before merging.
-- Commit messages: **no** `Co-Authored-By` or `Claude-Session` trailers.
+### Commit Authorship — STRICT RULE
+
+**Claude must never appear in the git history.** Every commit must look as if it was written entirely by the human developer.
+
+- **No `Co-Authored-By` trailers** of any kind (e.g. `Co-Authored-By: Claude …`).
+- **No `Claude-Session:` trailers** or any other AI-session metadata.
+- **No mention of "Claude", "AI", "LLM", or "Anthropic"** anywhere in the commit message subject, body, or trailers.
+- **No auto-generated commit message preambles** like "Generated with Claude Code" or "🤖 …".
+- The commit message must read as if a human engineer wrote it: describe *what* changed and *why*, nothing else.
 - Active open PR: **#8** (`feat/uv-install-and-error-logging`) — awaiting merge.
 
 ## PR Tracking
