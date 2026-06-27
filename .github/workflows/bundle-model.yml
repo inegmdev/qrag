@@ -1,0 +1,71 @@
+name: Bundle embedding model via Git LFS
+
+# One-shot workflow: downloads all-MiniLM-L6-v2 from HuggingFace and
+# commits the weight files to the repo via Git LFS so that
+# `uv tool install git+...` works offline/on restricted networks.
+#
+# Run this ONCE after the initial LFS setup, or whenever the model is
+# updated.  After the commit lands on main the model is permanently
+# bundled and this workflow never needs to run again (unless you change
+# the model).
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_branch:
+        description: "Branch to commit the model files to"
+        required: false
+        default: "main"
+
+permissions:
+  contents: write
+
+jobs:
+  bundle:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.target_branch || 'main' }}
+          lfs: true
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Download model from HuggingFace
+        run: |
+          pip install huggingface_hub -q
+          python - <<'EOF'
+          from huggingface_hub import snapshot_download
+          import pathlib
+
+          dest = pathlib.Path("src/qrag/models/all-MiniLM-L6-v2")
+          dest.parent.mkdir(parents=True, exist_ok=True)
+          snapshot_download(
+              repo_id="sentence-transformers/all-MiniLM-L6-v2",
+              local_dir=str(dest),
+              ignore_patterns=["*.msgpack", "*.h5", "flax_*", "tf_*", "rust_*"],
+          )
+          print(f"Downloaded to {dest}")
+          for f in sorted(dest.rglob("*")):
+              if f.is_file():
+                  print(f"  {f.relative_to(dest)}  ({f.stat().st_size:,} bytes)")
+          EOF
+
+      - name: Commit model via Git LFS
+        run: |
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git add src/qrag/models/
+          if git diff --cached --quiet; then
+            echo "No changes — model already committed."
+          else
+            git commit -m "chore: bundle all-MiniLM-L6-v2 via git LFS"
+            git push origin HEAD
+            echo "Model committed and pushed."
+          fi
