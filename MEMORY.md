@@ -144,7 +144,8 @@ Full authoritative list: [`docs/BACKLOG.md`](docs/BACKLOG.md).
 | GH#35 | — | Open — install size; partial fix in PR #39 |
 | GH#38 | — | Open — onnxruntime refactor (permanent fix for GH#35) |
 | GH#49 | — | Open — [EPIC] qrag explore |
-| GH#41–48 | — | Open — explore sub-issues (implement in order) |
+| **GH#41** | `feat/gh41-explore-list-stats` | **Open** — EXPLORE-A: `explore list` + `explore stats` implemented, ready for PR |
+| GH#42–48 | — | Open — explore sub-issues (implement in order after GH#41 merges) |
 
 ---
 
