@@ -1,5 +1,1 @@
 *.png filter=lfs diff=lfs merge=lfs -text
-src/qrag/models/**/*.safetensors filter=lfs diff=lfs merge=lfs -text
-src/qrag/models/**/*.pt filter=lfs diff=lfs merge=lfs -text
-src/qrag/models/**/*.onnx filter=lfs diff=lfs merge=lfs -text
-src/qrag/models/**/*.bin filter=lfs diff=lfs merge=lfs -text
