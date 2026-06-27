@@ -1755,8 +1755,23 @@ def hub_delete(version: str):
     delete_database(version_dir)
 
 
+def _apply_system_certs() -> None:
+    """Make Python use the OS certificate store (same as browsers, git, curl).
+
+    truststore hooks into Python's ssl module so that all HTTPS clients
+    (requests, httpx, urllib) trust whatever the OS already trusts —
+    including corporate/proxy CAs installed by IT — without any user config.
+    """
+    try:
+        import truststore
+        truststore.inject_into_ssl()
+    except ImportError:
+        pass
+
+
 def main() -> None:
     """Entry point wrapper — catches all exceptions and exits with a clean English message."""
+    _apply_system_certs()
     log_path = _new_log_path()
     _save_log = False
     _exc: BaseException | None = None
