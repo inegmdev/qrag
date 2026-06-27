@@ -56,6 +56,8 @@ When starting a new session, review this file and prefer working on higher-sever
 
 - [x] **GH#29** `cli.py:1065-1066` — `--force` silently deletes `code.db`/`docs.db` with no warning or confirmation prompt; users lose hours of build with a single flag. Fixed in fix/gh28-gh29-build-safety: shows DB summary (size, file count, last-built), requires `[y/N]` confirmation; `--yes`/`-y` skips for CI; non-TTY without `--yes` exits with error. [GitHub](https://github.com/inegmdev/qrag/issues/29)
 
+- [ ] **GH#40** `cli.py` — Ctrl+C during `qrag build` dumps worker tracebacks to the terminal and triggers an error log instead of shutting down gracefully. Should suppress pool tracebacks and exit cleanly. [GitHub](https://github.com/inegmdev/qrag/issues/40)
+
 - [ ] **GH#27** `cli.py` — Proportional CPU split: both `ProcessPoolExecutor` pools receive the same `limit_cpu`; dual builds over-subscribe cores → degraded throughput. Fix: split budget by file count ratio. [GitHub](https://github.com/inegmdev/qrag/issues/27)
 
 - [ ] **GH#30** `cli.py` — No pre-build visualization of existing DB (size, file count, last-built) or delta preview (N changed, M new); no confirm-before-proceed prompt. [GitHub](https://github.com/inegmdev/qrag/issues/30)
