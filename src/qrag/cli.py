@@ -1130,7 +1130,7 @@ def build(input_dirs: tuple[Path, ...], output: str, device: str, limit_cpu: int
     if batch_size is None:
         batch_size = default_batch_size(resolved_device)
 
-    precision = "float16" if resolved_device == "cuda" else "float32"
+    precision = "float32"
 
     click.echo(f"[build] device={resolved_device}  batch-size={batch_size}  precision={precision}")
 
