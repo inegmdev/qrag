@@ -468,3 +468,108 @@ start/…/parent/file → sdk/…/gpio/gpio.c   ← preferred, grow head
 …/file              → …/gpio.c
 filename only       → gpio.c (truncated if still too long)
 ```
+
+---
+
+## AD-10: qrag explore — Unified Database Explorer (replaces hub)
+
+**Decision:** `qrag hub` is replaced entirely by `qrag explore`. `explore` exposes the same operations (list, download, push, delete) as discrete subcommands for scripting/CI, and additionally opens a full-screen Rich TUI when invoked with no arguments. Multiple remote backends are supported via a registry in `~/.qrag/config.json`.
+
+**Why:** `hub` was a thin wrapper around a single GitHub Releases remote. Teams now need to: (1) see local and remote databases in one unified view; (2) visualize database contents (language stats, keyword tags, staleness); (3) push to multiple destinations (GitHub, HuggingFace Hub, JFrog Artifactory, git+LFS); (4) safely delete with auto-deactivation. None of these fit cleanly into the existing `hub` surface.
+
+**Trade-off:** `hub` is deprecated (hidden alias for one release cycle) before removal. New backend modules (HF Hub, JFrog, git+LFS) add optional runtime deps only when those remotes are configured.
+
+### qrag explore Command Tree
+
+```mermaid
+flowchart TD
+    EXP["qrag explore"]
+    EXP -->|"no args"| TUI["Rich TUI\n(interactive browser)"]
+    EXP --> LIST["explore list\nlocal + all remotes\nRich table"]
+    EXP --> STATS["explore stats VERSION\nlanguage % · symbol taxonomy\nkeyword tags · staleness · coverage"]
+    EXP --> DOWNLOAD["explore download VERSION\n--remote NAME"]
+    EXP --> DELETE["explore delete VERSION\n--yes / -y"]
+    EXP --> PUSH["explore push VERSION\n--remote NAME --dry-run --force"]
+    EXP --> DIFF["explore diff V1 V2\n--files --symbols --json"]
+    EXP --> ADDREM["explore add-remote NAME --type TYPE URL\nexplore remove-remote NAME\nexplore list-remotes"]
+    EXP --> SETREM["explore set-remote VERSION REMOTE"]
+```
+
+### Multi-Remote Architecture
+
+```mermaid
+flowchart TD
+    CFG["~/.qrag/config.json\nremotes:\n  default: { type: github, url: … }\n  hf-mirror: { type: huggingface, url: … }\n  ci-server: { type: jfrog, url: … }"]
+
+    CFG --> GHB["GitHubBackend\nAuth: GITHUB_TOKEN → gh auth token"]
+    CFG --> HFB["HuggingFaceBackend\nAuth: HF_TOKEN → huggingface-cli login"]
+    CFG --> JFB["JFrogBackend\nAuth: JFROG_TOKEN → jf config show"]
+    CFG --> LFB["GitLFSBackend\nAuth: GIT_TOKEN → system git credentials"]
+
+    GHB & HFB & JFB & LFB -->|"list / push / download"| OPS["Remote Operations\npre-flight check → upload/download → verify SHA-256"]
+```
+
+### Origin Tracking
+
+Every downloaded database records its source remote in `~/.qrag/<version>/config.json`:
+
+```json
+{ "origin_remote": "default", "origin_version": "v1.0" }
+```
+
+`explore push` defaults to `origin_remote`; `explore set-remote` reassigns it anytime.
+
+### Keyword Tag Cloud — Two Sources
+
+```mermaid
+flowchart LR
+    subgraph DOCS["Docs database"]
+        DS["doc_sections.title\n(section headings)"] -->|"stop-word filter\ntop 40 words"| DTAGS["DMA  UART  IRQ  GPIO\nTimer  SPI  clock  reset"]
+    end
+
+    subgraph CODE["Code database"]
+        SYM["symbols.name\n(function/struct/macro names)"] -->|"split camelCase + snake_case\ncount one-word tokens\ntop 40"| CTAGS["DMA  Transfer  init\nuart  config  enable"]
+    end
+```
+
+### Implementation Plan (issue dependency chain)
+
+```mermaid
+flowchart LR
+    A["#41 EXPLORE-A\nlist + stats\nlocal MVP"]
+    B["#42 EXPLORE-B\nGitHub remote\n+ download"]
+    C["#43 EXPLORE-C\ndelete\n+ deactivate"]
+    D["#44 EXPLORE-D\nHF · JFrog · git+LFS\nadd-remote"]
+    E["#45 EXPLORE-E\npush\npre-flight"]
+    F["#46 EXPLORE-F\nTUI"]
+    G["#47 EXPLORE-G\ndiff"]
+    H["#48 EXPLORE-H\n--all-remotes"]
+
+    A --> B --> C --> D --> E --> F
+    A --> G
+    E --> H
+```
+
+Each step is independently end-to-end testable. Epic tracked in GH#49.
+
+---
+
+## AD-11: CPU-Only Torch Default (GH#35)
+
+**Decision:** `[tool.uv.sources]` in `pyproject.toml` redirects `torch` to the official PyTorch CPU-only wheel index (`https://download.pytorch.org/whl/cpu`) for all uv installs. The CUDA wheel is only fetched when the user explicitly passes `--no-sources` (uv) or installs `[full]` via pip.
+
+**Why:** `sentence-transformers` (a base dependency) pulls in `torch`, and the default PyPI `torch` wheel on Linux bundles 15 NVIDIA/CUDA libraries totalling ~2.3 GB — all unused on CPU-only machines. The CPU wheel reduces the default install from **~2.53 GB to ~220 MB** (~91% reduction).
+
+**Trade-off:** `[tool.uv.sources]` is uv-specific; pip and pipx users still get the CUDA wheel unless they pre-install `torch --index-url .../cpu` first. The permanent fix (GH#38) is to replace `torch` entirely with `onnxruntime` (~10 MB).
+
+```mermaid
+flowchart TD
+    INST["uv tool install qrag"]
+    INST --> SRC{"[tool.uv.sources]\ntorch source?"}
+    SRC -->|"default (no --no-sources)"| CPU["pytorch-cpu index\nhttps://download.pytorch.org/whl/cpu\ntorch CPU wheel  ~220 MB"]
+    SRC -->|"--no-sources flag"| CUDA["default PyPI\ntorch CUDA wheel + 15 NVIDIA pkgs\n~2.53 GB"]
+
+    subgraph FUTURE["GH#38 — future"]
+        ORT["onnxruntime  ~10 MB\nno torch dependency\nworks for pip + pipx + uv"]
+    end
+```

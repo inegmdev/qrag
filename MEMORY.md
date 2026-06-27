@@ -100,38 +100,51 @@ TEAM USAGE:
 
 ## Backlog (Top Open Items)
 
-Full authoritative list: [`docs/BACKLOG.md`](docs/BACKLOG.md). **IS1 and IS2 are top open priorities; IS3–IS5 resolved.**
+Full authoritative list: [`docs/BACKLOG.md`](docs/BACKLOG.md).
 
 | ID | Severity | Summary |
 |----|----------|---------|
-| ~~**IS1**~~ | ~~Critical~~ | ~~Ugly TUI~~ — resolved feat/is1-is2-rich-tui-report |
-| ~~**IS2**~~ | ~~Critical~~ | ~~No post-build report~~ — resolved feat/is1-is2-rich-tui-report |
-| ~~**IS3**~~ | ~~Critical~~ | ~~Single active DB only~~ — resolved PR #16 |
-| ~~**IS4**~~ | ~~Critical~~ | ~~Doc chunks missing rich metadata~~ — resolved PR #17 |
-| ~~**IS5**~~ | ~~Critical~~ | ~~Code chunks missing rich metadata~~ — resolved PR #17 |
-| ~~**GH#18**~~ | ~~High~~ | ~~Add Antigravity CLI support~~ — resolved feat/gh18-antigravity-support (PR #22) |
-| **C2** | Critical | `db_path`/`ddb_path` can be `None` in code-only or docs-only `build` → `TypeError` |
-| **C3** | Critical | DB connections not closed on exception → fd exhaustion |
-| **H0** | High | Build-source relationship metadata (link cmake targets to their source files) |
-| **H1–H6** | High | See `docs/BACKLOG.md` |
+| ~~**IS1–IS5**~~ | ~~Critical~~ | Resolved |
+| ~~**C0, C1, C2, C3**~~ | ~~Critical~~ | Resolved |
+| ~~**GH#13, GH#18, GH#23, GH#26, GH#28, GH#29, GH#31, GH#32**~~ | ~~High~~ | Resolved |
+| **GH#35** | High | Install size: ~2.53 GB CUDA on Linux. PR #39 (uv CPU fix) open. Full fix: GH#38 |
+| **GH#38** | High | Replace torch with onnxruntime → ~30 MB for all package managers |
+| **H0** | High | Build-source relationship metadata (cmake targets ↔ source files) |
+| **H1–H6, GH#27, GH#30** | High | See `docs/BACKLOG.md` |
+| **GH#49** | Feature | [EPIC] `qrag explore` — replaces `hub`; TUI + multi-remote (GH#41–48) |
+| **GH#41** | Feature | [EXPLORE-A] `explore list` + `explore stats` — local DB visualization (MVP) |
+| **GH#42** | Feature | [EXPLORE-B] GitHub remote integration + download + origin tracking |
+| **GH#43** | Feature | [EXPLORE-C] `explore delete` with confirmation + auto-deactivation |
+| **GH#44** | Feature | [EXPLORE-D] HuggingFace Hub, JFrog, git+LFS backends + `add-remote` |
+| **GH#45** | Feature | [EXPLORE-E] `explore push` with pre-flight check + remote selection |
+| **GH#46** | Feature | [EXPLORE-F] `qrag explore` interactive TUI |
+| **GH#47** | Feature | [EXPLORE-G] `explore diff v1 v2` — version comparison |
+| **GH#48** | Feature | [EXPLORE-H] `explore push --all-remotes` — multi-remote sync |
 | **M1–M6** | Medium | See `docs/BACKLOG.md` |
 | **L1–L8** | Low | See `docs/BACKLOG.md` |
 
 ---
 
-## Git & PR State (as of 2026-06-26)
+## Git & PR State (as of 2026-06-27)
 
-| PR | Branch | State |
-|----|--------|-------|
-| #10 | `feat/uv-install-and-error-logging` | Merged — SSL fallback for model loading |
-| #11 | `fix/c1-mcp-silent-exception-swallow` | Merged — MCP exception surfacing + logging |
-| #12 | `feat/c0-multi-language-support` | Merged — 305+ language support + build system indexing |
-| #15 | `feat/gh13-role-based-deps` | Merged — consumer vs builder dep split |
-| #16 | `feat/is3-multi-db-fanout` | Merged — multi-DB fan-out search (IS3) |
-| #17 | `feat/is4-is5-rich-metadata` | Merged — rich code + doc metadata (IS4, IS5) |
-| #19 | `refactor/rename-prepare-to-build` | Merged — renamed `prepare` → `build` |
-| #20 | `feat/is1-is2-rich-tui-report` | Merged — Rich TUI progress bars + build report (IS1, IS2) |
-| #22 | `feat/gh18-antigravity-support` | Open — Antigravity CLI (agy) support in `qrag ai setup` (GH#18) |
+| PR / Issue | Branch | State |
+|------------|--------|-------|
+| #10 | `feat/uv-install-and-error-logging` | Merged |
+| #11 | `fix/c1-mcp-silent-exception-swallow` | Merged |
+| #12 | `feat/c0-multi-language-support` | Merged |
+| #15 | `feat/gh13-role-based-deps` | Merged |
+| #16 | `feat/is3-multi-db-fanout` | Merged |
+| #17 | `feat/is4-is5-rich-metadata` | Merged |
+| #19 | `refactor/rename-prepare-to-build` | Merged |
+| #20 | `feat/is1-is2-rich-tui-report` | Merged |
+| #22 | `feat/gh18-antigravity-support` | Merged |
+| #33 | `feat/gh26-tui-improvements` | Merged — Rich TUI MVC, log panel, proportional CPU split |
+| #34 | `fix/gh28-gh29-build-safety` | Merged — incremental manifest writes + --force confirmation |
+| **#39** | `fix/gh35-cpu-only-torch-default` | **Open** — CPU-only torch for uv (GH#35) |
+| GH#35 | — | Open — install size; partial fix in PR #39 |
+| GH#38 | — | Open — onnxruntime refactor (permanent fix for GH#35) |
+| GH#49 | — | Open — [EPIC] qrag explore |
+| GH#41–48 | — | Open — explore sub-issues (implement in order) |
 
 ---
 
@@ -140,24 +153,27 @@ Full authoritative list: [`docs/BACKLOG.md`](docs/BACKLOG.md). **IS1 and IS2 are
 - **SQLite + sqlite-vec** chosen over Chroma/Pinecone for zero-dependency single-file distribution
 - **`all-MiniLM-L6-v2`** (384-dim) chosen for local/free/fast; bundled in wheel (no HuggingFace runtime call)
 - **`tree-sitter-language-pack`** (single dep, 305+ grammars) replaced individual `tree-sitter-c/cpp` packages
-- **Build system files indexed as code** — CMakeLists.txt, Makefile, Cargo.toml etc. are first-class code chunks; build metadata (targets, features, variants) must be searchable
-- **Language-agnostic chunk_type** — free-form string (function/class/struct/…) so new languages never require a schema migration
-- **`language` column** in `code_chunks` and `symbols` — AI agent knows whether a result is from Rust, CMake, etc.
+- **Build system files indexed as code** — CMakeLists.txt, Makefile, Cargo.toml etc. are first-class code chunks
+- **Language-agnostic chunk_type** — free-form string; new languages never require a schema migration
+- **`language` column** in `code_chunks` and `symbols` — AI agent knows result language
 - **Function-level chunking** — tree-sitter identifies exact boundaries; large symbols auto-split with overlap
-- **Section-level doc chunking** — preserves heading hierarchy and page references (important for TRM navigation)
-- **Multi-DB fan-out** (IS3, PR #16) — `active_versions` list; all MCP tools fan-out in parallel via ThreadPoolExecutor, merge by score, dedup
-- **GitHub Releases** for database distribution — no custom infra needed
-- **`uv tool install`** as primary install method — isolated envs, no system-package conflicts
-- Entry point: `qrag.cli:main` (wraps `cli()` for error-log writing on non-zero exit since v0.2.0)
-- MCP server errors must never be silently dropped — surface as JSON-RPC error responses AND log to `mcp_errors.log`
+- **Section-level doc chunking** — preserves heading hierarchy and page references
+- **Multi-DB fan-out** (PR #16) — `active_versions` list; MCP tools fan-out via ThreadPoolExecutor, merge by score, dedup
+- **`uv tool install`** as primary install method; `[tool.uv.sources]` pins torch to CPU wheel (AD-11)
+- **`qrag hub` → `qrag explore`** — hub is deprecated; explore replaces it with TUI + multi-remote support (AD-10)
+- **Multi-remote backends** planned: GitHub Releases (current), HuggingFace Hub, JFrog Artifactory, git+LFS
+- **Origin tracking** — downloaded DBs store `origin_remote` in `~/.qrag/<v>/config.json`
+- **Keyword tags** — docs: top words from section titles; code: camelCase/snake_case token split from symbol names
+- Entry point: `qrag.cli:main` (wraps `cli()` for error-log writing on non-zero exit)
+- MCP server errors surface as JSON-RPC error responses AND log to `mcp_errors.log`
 
 ---
 
 ## How to Start a New Session
 
 1. Read this file (`MEMORY.md`)
-2. Read [`docs/BACKLOG.md`](docs/BACKLOG.md) — **IS1–IS5 are top priority**
-3. Run `gh issue list --state open --limit 50` — add any GitHub issues not yet in `docs/BACKLOG.md` (see sync rule in `CLAUDE.md`)
+2. Read [`docs/BACKLOG.md`](docs/BACKLOG.md)
+3. Sync GitHub issues: fetch open issues and add any not yet in backlog
 4. Check `git log --oneline -10` for recent changes
-5. Work on C2 → C3 → H3 → H4 → H6 → GH#18 unless user directs otherwise
-6. Before ending: update `docs/BACKLOG.md` checkboxes, update this file if architecture/scope changed, update `docs/HANDOFF.md`
+5. Priority order: GH#35/GH#38 (install size) → GH#41 (explore MVP) → H0/H3/H4/H6 → M items
+6. Before ending: update `docs/BACKLOG.md` checkboxes, update this file, update `docs/ARCHITECTURE.md`
