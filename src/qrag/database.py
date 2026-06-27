@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import re
 import sqlite3
+from collections import Counter
 from pathlib import Path
 from typing import Any
 
@@ -559,3 +561,102 @@ def search_code(db_path: Path, query_embedding: list[float], top_k: int = 5) -> 
             }
         )
     return results
+
+
+# ---------------------------------------------------------------------------
+# Explore stats helpers
+# ---------------------------------------------------------------------------
+
+_STOP_WORDS: frozenset[str] = frozenset({
+    "a", "an", "the", "of", "to", "in", "is", "it", "on", "at", "be",
+    "do", "go", "if", "or", "and", "for", "not", "are", "was", "with",
+    "from", "this", "that", "have", "has", "had", "can", "will",
+    "ret", "val", "var", "tmp", "ptr", "buf", "len", "num", "max", "min",
+    "get", "set", "new", "del", "err", "res", "idx", "cnt", "str", "int",
+    "msg", "cfg", "ctx", "obj", "ref", "key", "out", "arg", "its",
+})
+
+
+def _split_identifier(name: str) -> list[str]:
+    """Split camelCase/PascalCase/snake_case identifiers into lowercase word tokens."""
+    s = re.sub(r'([A-Z]+)([A-Z][a-z])', r'\1 \2', name)
+    s = re.sub(r'([a-z\d])([A-Z])', r'\1 \2', s)
+    return [t.lower() for t in re.split(r'[_\s\d]+', s) if len(t) >= 3]
+
+
+def _top_tokens(words: list[str], n: int = 40) -> list[tuple[str, int]]:
+    counts: Counter[str] = Counter(w for w in words if w not in _STOP_WORDS and len(w) >= 3)
+    return counts.most_common(n)
+
+
+def get_code_stats(db_path: Path) -> dict:
+    """Return stats dict for a code.db: languages, symbol types, keyword tags, file count, staleness."""
+    if not db_path.exists():
+        return {}
+    db = _open_code(db_path)
+    try:
+        lang_rows = db.execute(
+            "SELECT COALESCE(language, '') AS lang, COUNT(*) AS cnt "
+            "FROM code_chunks GROUP BY lang ORDER BY cnt DESC"
+        ).fetchall()
+        type_rows = db.execute(
+            "SELECT COALESCE(type, '') AS typ, COUNT(*) AS cnt "
+            "FROM symbols GROUP BY typ ORDER BY cnt DESC"
+        ).fetchall()
+        total_chunks = db.execute("SELECT COUNT(*) FROM code_chunks").fetchone()[0]
+        total_symbols = db.execute("SELECT COUNT(*) FROM symbols").fetchone()[0]
+        file_count = db.execute("SELECT COUNT(DISTINCT rel_path) FROM file_manifest").fetchone()[0]
+        max_mtime = db.execute("SELECT MAX(mtime) FROM file_manifest").fetchone()[0]
+        symbol_names = [r[0] for r in db.execute(
+            "SELECT name FROM symbols WHERE name IS NOT NULL"
+        ).fetchall()]
+    finally:
+        db.close()
+
+    tokens: list[str] = []
+    for name in symbol_names:
+        tokens.extend(_split_identifier(name))
+
+    return {
+        "languages": [(r["lang"] or "unknown", r["cnt"]) for r in lang_rows],
+        "symbol_types": [(r["typ"] or "unknown", r["cnt"]) for r in type_rows],
+        "total_chunks": total_chunks,
+        "total_symbols": total_symbols,
+        "file_count": file_count,
+        "max_mtime": max_mtime,
+        "keyword_tags": _top_tokens(tokens, 40),
+    }
+
+
+def get_docs_stats(db_path: Path) -> dict:
+    """Return stats dict for a docs.db: section/doc counts, doc types, keyword tags, staleness."""
+    if not db_path.exists():
+        return {}
+    db = _open_docs(db_path)
+    try:
+        total_sections = db.execute("SELECT COUNT(*) FROM doc_sections").fetchone()[0]
+        total_docs = db.execute("SELECT COUNT(DISTINCT source_path) FROM doc_sections").fetchone()[0]
+        type_rows = db.execute(
+            "SELECT COALESCE(doc_type, '') AS typ, COUNT(*) AS cnt "
+            "FROM doc_sections GROUP BY typ ORDER BY cnt DESC"
+        ).fetchall()
+        file_count = db.execute("SELECT COUNT(DISTINCT rel_path) FROM file_manifest").fetchone()[0]
+        max_mtime = db.execute("SELECT MAX(mtime) FROM file_manifest").fetchone()[0]
+        titles = [r[0] for r in db.execute(
+            "SELECT title FROM doc_sections WHERE title IS NOT NULL"
+        ).fetchall()]
+    finally:
+        db.close()
+
+    words: list[str] = []
+    for title in titles:
+        words.extend(w.lower() for w in re.split(r'\W+', title) if len(w) >= 3)
+
+    return {
+        "total_sections": total_sections,
+        "total_docs": total_docs,
+        "doc_types": [(r["typ"] or "unknown", r["cnt"]) for r in type_rows],
+        "file_count": file_count,
+        "max_mtime": max_mtime,
+        "keyword_tags": _top_tokens(words, 40),
+    }

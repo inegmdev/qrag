@@ -1692,9 +1692,10 @@ def search_symbol(name: str):
 # HUB — Share & manage indexes via GitHub
 # ---------------------------------------------------------------------------
 
-@cli.group("hub")
+@cli.group("hub", hidden=True)
 def hub():
-    """Manage and share indexes via GitHub."""
+    """(Deprecated — use 'qrag explore' instead) Manage and share indexes via GitHub."""
+    click.echo("Warning: 'qrag hub' is deprecated. Use 'qrag explore' instead.", err=True)
 
 
 @hub.command("list")
@@ -1753,6 +1754,257 @@ def hub_delete(version: str):
     version_dir = CACHE_DIR / version
     from .github_distribution import delete_database
     delete_database(version_dir)
+
+
+# ---------------------------------------------------------------------------
+# EXPLORE — Browse, inspect, and manage local databases
+# ---------------------------------------------------------------------------
+
+@cli.group("explore")
+def explore():
+    """Browse, inspect, and manage local qrag databases."""
+
+
+@explore.command("list")
+def explore_list():
+    """List all local database versions with sizes, status, and build date."""
+    try:
+        from rich.console import Console
+        from rich.table import Table
+        from rich.text import Text
+        _rich_available = True
+    except ImportError:
+        _rich_available = False
+
+    cfg = load_global()
+    active = set(cfg.get("active_versions", []))
+
+    versions = []
+    if CACHE_DIR.exists():
+        for d in sorted(CACHE_DIR.iterdir()):
+            if not d.is_dir():
+                continue
+            if (d / "code.db").exists() or (d / "docs.db").exists():
+                versions.append(d.name)
+
+    if not versions:
+        click.echo("No local databases found. Run 'qrag hub download <version>' or 'qrag build' first.")
+        return
+
+    def _fmt_size(p: Path) -> str:
+        if not p.exists():
+            return "—"
+        mb = p.stat().st_size / (1024 * 1024)
+        return f"{mb:.1f} MB"
+
+    def _build_date(vdir: Path) -> str:
+        mtime = 0.0
+        for name in ("code.db", "docs.db"):
+            p = vdir / name
+            if p.exists():
+                mtime = max(mtime, p.stat().st_mtime)
+        if not mtime:
+            return "—"
+        return datetime.datetime.fromtimestamp(mtime).strftime("%Y-%m-%d")
+
+    if _rich_available:
+        console = Console()
+        table = Table(title="Local qrag Databases", show_header=True, header_style="bold cyan")
+        table.add_column("Version", style="bold", min_width=12)
+        table.add_column("Active", justify="center", min_width=6)
+        table.add_column("code.db", justify="right", min_width=10)
+        table.add_column("docs.db", justify="right", min_width=10)
+        table.add_column("Built", justify="center", min_width=12)
+
+        for v in versions:
+            vdir = CACHE_DIR / v
+            is_active = v in active
+            marker = Text("★", style="green bold") if is_active else Text("·", style="dim")
+            table.add_row(
+                Text(v, style="green bold" if is_active else ""),
+                marker,
+                _fmt_size(vdir / "code.db"),
+                _fmt_size(vdir / "docs.db"),
+                _build_date(vdir),
+            )
+
+        console.print(table)
+        console.print(f"\n[dim]Stored in: {CACHE_DIR}[/dim]")
+        console.print("[dim]Run 'qrag explore stats <version>' for a detailed breakdown.[/dim]")
+    else:
+        click.echo(f"{'Version':<20} {'Active':^8} {'code.db':>10} {'docs.db':>10} {'Built':>12}")
+        click.echo("-" * 64)
+        for v in versions:
+            vdir = CACHE_DIR / v
+            marker = "★" if v in active else " "
+            click.echo(
+                f"{v:<20} {marker:^8} {_fmt_size(vdir / 'code.db'):>10}"
+                f" {_fmt_size(vdir / 'docs.db'):>10} {_build_date(vdir):>12}"
+            )
+
+
+@explore.command("stats")
+@click.argument("version")
+def explore_stats(version: str):
+    """Show detailed statistics for a local database version."""
+    vdir = CACHE_DIR / version
+    if not vdir.exists():
+        click.echo(
+            f"Version '{version}' not found. Run 'qrag explore list' to see available versions.",
+            err=True,
+        )
+        sys.exit(1)
+
+    code_db = vdir / "code.db"
+    docs_db = vdir / "docs.db"
+
+    from .database import get_code_stats, get_docs_stats
+
+    code_stats = get_code_stats(code_db) if code_db.exists() else {}
+    docs_stats = get_docs_stats(docs_db) if docs_db.exists() else {}
+
+    if not code_stats and not docs_stats:
+        click.echo(f"Version '{version}' exists but has no code.db or docs.db.", err=True)
+        sys.exit(1)
+
+    try:
+        from rich.columns import Columns
+        from rich.console import Console
+        from rich.panel import Panel
+        from rich.table import Table
+        from rich.text import Text
+        _rich = True
+    except ImportError:
+        _rich = False
+
+    if not _rich:
+        click.echo(f"\n=== {version} ===")
+        if code_stats:
+            click.echo(
+                f"\n[code.db]  chunks={code_stats['total_chunks']}  "
+                f"symbols={code_stats['total_symbols']}  files={code_stats['file_count']}"
+            )
+            click.echo("Languages: " + ", ".join(f"{l}({n})" for l, n in code_stats["languages"][:8]))
+            click.echo("Symbol types: " + ", ".join(f"{t}({n})" for t, n in code_stats["symbol_types"][:8]))
+            click.echo("Keywords: " + " ".join(t for t, _ in code_stats["keyword_tags"][:20]))
+        if docs_stats:
+            click.echo(
+                f"\n[docs.db]  sections={docs_stats['total_sections']}  "
+                f"docs={docs_stats['total_docs']}  files={docs_stats['file_count']}"
+            )
+            click.echo("Doc types: " + ", ".join(f"{t}({n})" for t, n in docs_stats["doc_types"][:8]))
+            click.echo("Keywords: " + " ".join(t for t, _ in docs_stats["keyword_tags"][:20]))
+        return
+
+    console = Console()
+
+    def _fmt_mb(p: Path) -> str:
+        if not p.exists():
+            return "[dim]—[/dim]"
+        mb = p.stat().st_size / (1024 * 1024)
+        return f"{mb:.1f} MB"
+
+    def _fmt_age(ts: float | None) -> str:
+        if not ts:
+            return "unknown"
+        dt = datetime.datetime.fromtimestamp(ts)
+        age = datetime.datetime.now() - dt
+        label = dt.strftime("%Y-%m-%d")
+        if age.days == 0:
+            return f"today ({label})"
+        if age.days == 1:
+            return f"yesterday ({label})"
+        if age.days < 30:
+            return f"{age.days} days ago ({label})"
+        if age.days < 365:
+            return f"{age.days // 30} months ago ({label})"
+        return f"{age.days // 365} years ago ({label})"
+
+    def _keyword_cloud(tags: list[tuple[str, int]], color: str) -> str:
+        if not tags:
+            return "[dim](none)[/dim]"
+        max_cnt = tags[0][1] or 1
+        parts: list[str] = []
+        for word, cnt in tags:
+            w = cnt / max_cnt
+            if w > 0.7:
+                parts.append(f"[bold {color}]{word}[/bold {color}]")
+            elif w > 0.4:
+                parts.append(f"[{color}]{word}[/{color}]")
+            else:
+                parts.append(f"[dim]{word}[/dim]")
+        return " ".join(parts)
+
+    console.print()
+    console.rule(f"[bold cyan]{version}[/bold cyan]", style="cyan")
+
+    # ── Summary ────────────────────────────────────────────────────────────
+    summary_lines: list[str] = []
+    if code_stats:
+        summary_lines += [
+            f"  [bold]code.db[/bold]   {_fmt_mb(code_db)}",
+            f"  Chunks    {code_stats['total_chunks']:,}",
+            f"  Symbols   {code_stats['total_symbols']:,}",
+            f"  Files     {code_stats['file_count']:,}",
+            f"  Built     {_fmt_age(code_stats.get('max_mtime'))}",
+        ]
+    if docs_stats:
+        if summary_lines:
+            summary_lines.append("")
+        summary_lines += [
+            f"  [bold]docs.db[/bold]   {_fmt_mb(docs_db)}",
+            f"  Sections  {docs_stats['total_sections']:,}",
+            f"  Docs      {docs_stats['total_docs']:,}",
+            f"  Files     {docs_stats['file_count']:,}",
+            f"  Built     {_fmt_age(docs_stats.get('max_mtime'))}",
+        ]
+    console.print(Panel("\n".join(summary_lines), title="Summary", border_style="cyan"))
+
+    # ── Code tables ────────────────────────────────────────────────────────
+    if code_stats:
+        lang_table = Table(show_header=True, header_style="bold yellow", box=None, padding=(0, 1))
+        lang_table.add_column("Language")
+        lang_table.add_column("Chunks", justify="right")
+        total_c = code_stats["total_chunks"] or 1
+        for lang, cnt in code_stats["languages"][:12]:
+            pct = cnt / total_c * 100
+            lang_table.add_row(lang or "[dim]unknown[/dim]", f"{cnt:,} ({pct:.0f}%)")
+
+        sym_table = Table(show_header=True, header_style="bold yellow", box=None, padding=(0, 1))
+        sym_table.add_column("Symbol Type")
+        sym_table.add_column("Count", justify="right")
+        for sym_type, cnt in code_stats["symbol_types"][:12]:
+            sym_table.add_row(sym_type or "[dim]unknown[/dim]", f"{cnt:,}")
+
+        console.print(Columns([
+            Panel(lang_table, title="Language Breakdown", border_style="yellow"),
+            Panel(sym_table, title="Symbol Taxonomy", border_style="yellow"),
+        ]))
+
+        if code_stats.get("keyword_tags"):
+            console.print(Panel(
+                _keyword_cloud(code_stats["keyword_tags"], "cyan"),
+                title="Code Keyword Cloud",
+                border_style="blue",
+            ))
+
+    # ── Docs panels ────────────────────────────────────────────────────────
+    if docs_stats:
+        doc_table = Table(show_header=True, header_style="bold magenta", box=None, padding=(0, 1))
+        doc_table.add_column("Doc Type")
+        doc_table.add_column("Sections", justify="right")
+        for doc_type, cnt in docs_stats["doc_types"][:12]:
+            doc_table.add_row(doc_type or "[dim]unknown[/dim]", f"{cnt:,}")
+        console.print(Panel(doc_table, title="Document Types", border_style="magenta"))
+
+        if docs_stats.get("keyword_tags"):
+            console.print(Panel(
+                _keyword_cloud(docs_stats["keyword_tags"], "magenta"),
+                title="Docs Keyword Cloud",
+                border_style="blue",
+            ))
+
+    console.print()
 
 
 def main() -> None:
