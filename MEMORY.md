@@ -1,4 +1,4 @@
-# qrag — Project Memory
+﻿# qrag — Project Memory
 
 > **How to use this file:** Read it at the start of every new Claude session. Update it before ending any session where significant design decisions, context, or accumulated discussion happened. It is intentionally dense — prefer references to full docs over inline prose.
 
@@ -107,8 +107,8 @@ Full authoritative list: [`docs/BACKLOG.md`](docs/BACKLOG.md).
 | ~~**IS1–IS5**~~ | ~~Critical~~ | Resolved |
 | ~~**C0, C1, C2, C3**~~ | ~~Critical~~ | Resolved |
 | ~~**GH#13, GH#18, GH#23, GH#26, GH#28, GH#29, GH#31, GH#32**~~ | ~~High~~ | Resolved |
-| **GH#35** | High | Install size: ~2.53 GB CUDA on Linux. PR #39 (uv CPU fix) open. Full fix: GH#38 |
-| **GH#38** | High | Replace torch with onnxruntime → ~30 MB for all package managers |
+| ~~**GH#35**~~ | ~~High~~ | Resolved by GH#38 / PR #55 |
+| ~~**GH#38**~~ | ~~High~~ | Resolved in PR #55 — onnxruntime + tokenizers, ~30 MB |
 | **H0** | High | Build-source relationship metadata (cmake targets ↔ source files) |
 | **H1–H6, GH#27, GH#30** | High | See `docs/BACKLOG.md` |
 | **GH#49** | Feature | [EPIC] `qrag explore` — replaces `hub`; TUI + multi-remote (GH#41–48) |
@@ -125,7 +125,7 @@ Full authoritative list: [`docs/BACKLOG.md`](docs/BACKLOG.md).
 
 ---
 
-## Git & PR State (as of 2026-06-27)
+## Git & PR State (as of 2026-06-28)
 
 | PR / Issue | Branch | State |
 |------------|--------|-------|
@@ -140,9 +140,10 @@ Full authoritative list: [`docs/BACKLOG.md`](docs/BACKLOG.md).
 | #22 | `feat/gh18-antigravity-support` | Merged |
 | #33 | `feat/gh26-tui-improvements` | Merged — Rich TUI MVC, log panel, proportional CPU split |
 | #34 | `fix/gh28-gh29-build-safety` | Merged — incremental manifest writes + --force confirmation |
-| **#39** | `fix/gh35-cpu-only-torch-default` | **Open** — CPU-only torch for uv (GH#35) |
-| GH#35 | — | Open — install size; partial fix in PR #39 |
-| GH#38 | — | Open — onnxruntime refactor (permanent fix for GH#35) |
+| ~~#39~~ | `fix/gh35-cpu-only-torch-default` | Superseded by PR #55 (GH#38) |
+| ~~GH#35~~ | — | Resolved by GH#38 / PR #55 |
+| ~~GH#38~~ | — | Resolved — onnxruntime refactor done in PR #55 |
+| **#55** | `fix/gh38-onnxruntime-embedder` | **Open** — onnxruntime replaces torch+sentence-transformers (~30 MB) |
 | GH#49 | — | Open — [EPIC] qrag explore |
 | GH#41–48 | — | Open — explore sub-issues (implement in order) |
 
@@ -175,5 +176,7 @@ Full authoritative list: [`docs/BACKLOG.md`](docs/BACKLOG.md).
 2. Read [`docs/BACKLOG.md`](docs/BACKLOG.md)
 3. Sync GitHub issues: fetch open issues and add any not yet in backlog
 4. Check `git log --oneline -10` for recent changes
-5. Priority order: GH#35/GH#38 (install size) → GH#41 (explore MVP) → H0/H3/H4/H6 → M items
+5. Priority order: GH#41 (explore MVP) → H0/H3/H4/H6 → M items
 6. Before ending: update `docs/BACKLOG.md` checkboxes, update this file, update `docs/ARCHITECTURE.md`
+
+
