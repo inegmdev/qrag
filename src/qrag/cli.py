@@ -115,45 +115,7 @@ class _JsonFormatter(_logging.Formatter):
         })
 
 
-# Antigravity CLI requires YAML frontmatter in SKILL.md for skill detection.
-# The description field is used for semantic intent matching (/qrag trigger).
-_ANTIGRAVITY_SKILL_FRONTMATTER = """\
----
-name: qrag
-description: Search the local RAG database to answer questions about code or documentation. Use when the user asks about code, functions, symbols, API usage, or technical documentation from the indexed codebase.
----
-
-"""
-
-QRAG_SKILL_CONTENT = """Search the local RAG database iteratively to answer a question about code or documentation.
-
-## Workflow
-
-Given: $ARGUMENTS (your question or topic)
-
-1. **Think first**: Decompose the question — what concept am I looking for in docs? What symbol/function in code? Write your search intent before calling tools.
-
-2. **Search in parallel**: Call `search_docs` and `search_code` (both MCP tools) simultaneously with targeted queries. If only docs or only code apply, search only what is relevant.
-
-3. **Assess results**: For each result set, note the similarity scores and excerpt relevance. State explicitly what you found and what remains unanswered.
-
-4. **Iterate if needed**: Refine your query and search again. Stop iterating when:
-   - You have a high-confidence answer with supporting evidence, OR
-   - Two consecutive rounds return no new information (low scores, repeated results), OR
-   - The topic is clearly outside the indexed content.
-
-5. **Check in with the user** every 2–3 rounds: briefly state what you have found so far and ask if you should continue or refocus.
-
-6. **If information is not found**: Tell the user the topic is not in the local database. Suggest searching online and offer to help index new content with `qrag build -i <path>`.
-
-7. **Conclude**: Synthesize all findings into a clear answer. Cite source file paths, symbol names, doc sections, and page numbers. Flag any inconsistencies between docs and code.
-
-## Available MCP tools
-- `search_code(query)` — semantic search over indexed code symbols (returns top 10)
-- `search_docs(query)` — semantic search over indexed documentation (returns top 10)
-- `list_symbols(pattern)` — list code symbols matching a glob pattern
-- `get_symbol(name)` — retrieve full source of a specific symbol
-"""
+_SKILL_CONTENT = (Path(__file__).parent / "SKILL_qrag.md").read_text(encoding="utf-8")
 
 
 _CHANGELOG = """\
@@ -500,18 +462,18 @@ def _skills_install(ai: str, global_install: bool) -> None:
             cmd_dir = Path.cwd() / ".claude" / "commands"
         cmd_dir.mkdir(parents=True, exist_ok=True)
         skill_file = cmd_dir / "qrag.md"
-        with open(skill_file, "w") as f:
-            f.write(QRAG_SKILL_CONTENT)
+        with open(skill_file, "w", encoding="utf-8") as f:
+            f.write(_SKILL_CONTENT)
 
     elif ai == "gemini":
         if global_install:
-            cmd_dir = Path.home() / ".gemini" / "commands"
+            skill_dir = Path.home() / ".gemini" / "skills" / "qrag"
         else:
-            cmd_dir = Path.cwd() / ".gemini" / "commands"
-        cmd_dir.mkdir(parents=True, exist_ok=True)
-        skill_file = cmd_dir / "qrag.md"
-        with open(skill_file, "w") as f:
-            f.write(QRAG_SKILL_CONTENT)
+            skill_dir = Path.cwd() / ".gemini" / "skills" / "qrag"
+        skill_dir.mkdir(parents=True, exist_ok=True)
+        skill_file = skill_dir / "SKILL.md"
+        with open(skill_file, "w", encoding="utf-8") as f:
+            f.write(_SKILL_CONTENT)
 
     elif ai == "antigravity":
         # Antigravity skills live in a subdirectory named after the skill,
@@ -522,8 +484,8 @@ def _skills_install(ai: str, global_install: bool) -> None:
             skill_dir = Path.cwd() / ".agents" / "skills" / "qrag"
         skill_dir.mkdir(parents=True, exist_ok=True)
         skill_file = skill_dir / "SKILL.md"
-        with open(skill_file, "w") as f:
-            f.write(_ANTIGRAVITY_SKILL_FRONTMATTER + QRAG_SKILL_CONTENT)
+        with open(skill_file, "w", encoding="utf-8") as f:
+            f.write(_SKILL_CONTENT)
 
     else:
         click.echo(f"Error: Unknown AI tool '{ai}'", err=True)
