@@ -1717,6 +1717,37 @@ def hub_delete(version: str):
     delete_database(version_dir)
 
 
+# ---------------------------------------------------------------------------
+# EXPLORE — Local export / import
+# ---------------------------------------------------------------------------
+
+@cli.group("explore")
+def explore():
+    """Export and import local qrag databases as ZIP files."""
+
+
+@explore.command("export")
+@click.argument("version")
+@click.option("--output", "-o", type=click.Path(), default=None,
+              help="Output ZIP path (default: <cwd>/<version>.zip)")
+def explore_export(version: str, output: str | None):
+    """Package VERSION into a shareable ZIP file."""
+    from .zip_distribution import export_version
+    out = Path(output) if output else Path.cwd() / f"{version}.zip"
+    export_version(version, out)
+
+
+@explore.command("import")
+@click.argument("zip_path", type=click.Path(exists=True))
+@click.option("--version", "-v", "version_override", default=None,
+              help="Override the version name on import")
+@click.option("--yes", "-y", is_flag=True, help="Overwrite without confirmation")
+def explore_import(zip_path: str, version_override: str | None, yes: bool):
+    """Import a ZIP export and register it as an active database."""
+    from .zip_distribution import import_version
+    import_version(Path(zip_path), version_override, yes)
+
+
 def _apply_system_certs() -> None:
     """Make Python use the OS certificate store (same as browsers, git, curl).
 
