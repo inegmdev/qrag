@@ -573,3 +573,26 @@ flowchart TD
         ORT["onnxruntime  ~10 MB\nno torch dependency\nworks for pip + pipx + uv"]
     end
 ```
+
+## AD-12: Replace sentence-transformers+torch with onnxruntime (GH#38)
+
+**Decision:** Replace `sentence-transformers` and `torch` with `onnxruntime` + `tokenizers` for embedding inference. The ONNX-format `all-MiniLM-L6-v2` model (`Xenova/all-MiniLM-L6-v2` on HuggingFace) is bundled in the wheel and cached at `~/.qrag/models/all-MiniLM-L6-v2/` on first use when not bundled.
+
+**Why:** `torch` is the sole reason for the 2.53 GB install size. `onnxruntime` provides the same CPU inference at ~30 MB total (onnxruntime ~10 MB + ONNX model ~22 MB). This fix benefits all package managers (pip, pipx, uv) equally — unlike AD-11 which was uv-only. Removes AD-11 `[tool.uv.sources]` entirely.
+
+**Trade-off:** CUDA acceleration is no longer automatic; users needing GPU must install `onnxruntime-gpu` separately. Embeddings produced by onnxruntime may differ from sentence-transformers by floating-point rounding — teams rebuilding DBs should re-run `qrag build` to ensure vector consistency.
+
+```mermaid
+flowchart TD
+    INST["uv/pip/pipx install qrag"]
+    INST --> PKG["onnxruntime ~10 MB\ntokenizers ~3 MB\nhuggingface_hub ~5 MB\nTotal: ~30 MB"]
+    PKG --> LOAD["embedder.py\n_load()"]
+    LOAD --> LOCATE{"Bundled model?\n_BUNDLED_MODEL or\n_RUNTIME_MODEL"}
+    LOCATE -->|found| SESS["onnxruntime.InferenceSession\nCPUExecutionProvider"]
+    LOCATE -->|not found| DL["hf_hub_download\nXenova/all-MiniLM-L6-v2\n  tokenizer.json\n  onnx/model.onnx"]
+    DL --> SESS
+    SESS --> TOK["tokenizers.Tokenizer\nencode_batch → input_ids\n  attention_mask\n  token_type_ids"]
+    TOK --> INF["ONNX inference\nlast_hidden_state [B, 128, 384]"]
+    INF --> POOL["mean_pool + L2 normalize"]
+    POOL --> EMB["float32 embeddings [B, 384]"]
+```
