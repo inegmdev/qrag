@@ -1,4 +1,4 @@
-[build-system]
+﻿[build-system]
 requires = ["setuptools", "huggingface_hub>=0.20"]
 build-backend = "setuptools.build_meta"
 
@@ -10,7 +10,9 @@ requires-python = ">=3.10"
 dependencies = [
     "click>=8.1",
     "sqlite-vec>=0.1.6",
-    "sentence-transformers>=3.0",
+    "onnxruntime>=1.16",
+    "tokenizers>=0.15",
+    "huggingface_hub>=0.20",
     "truststore>=0.9",
 ]
 
@@ -23,11 +25,8 @@ build = [
     "beautifulsoup4>=4.12",
     "rich>=13.0",
 ]
-build-gpu = [
-    "torch>=2.0",
-]
 full = [
-    "qrag[build,build-gpu]",
+    "qrag[build]",
 ]
 dev = [
     "pytest>=8",
@@ -44,18 +43,8 @@ where = ["src"]
 [tool.setuptools.package-data]
 qrag = ["models/**/*"]
 
-# uv: always resolve torch from the CPU-only index (saves ~2.3 GB vs default PyPI)
-# GPU users: uv tool install qrag[full] --no-sources  (bypasses this to get CUDA torch)
-[tool.uv.sources]
-torch = [{ index = "pytorch-cpu" }]
-
-[[tool.uv.index]]
-name = "pytorch-cpu"
-url = "https://download.pytorch.org/whl/cpu"
-explicit = true
-
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 markers = [
-    "integration: marks tests that require real sentence-transformers embeddings (slow)",
+    "integration: marks tests that require real embeddings (slow)",
 ]

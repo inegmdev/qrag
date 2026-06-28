@@ -1,4 +1,4 @@
-# qrag — Known Issues & Backlog
+﻿# qrag — Known Issues & Backlog
 
 This file is the authoritative backlog of known bugs, missing features, and optimization opportunities, derived from a full codebase audit. Items are ordered by criticality within each tier.
 
@@ -32,9 +32,9 @@ When starting a new session, review this file and prefer working on higher-sever
 
 ## High — Likely User-Facing Failures
 
-- [ ] **GH#35** `pyproject.toml` — Default install downloads ~2.53 GB of CUDA libraries on Linux (sentence-transformers→torch chain). Partial fix in PR #39: `[tool.uv.sources]` redirects torch to CPU-only wheel for uv users (~220 MB). Full fix tracked in GH#38 (onnxruntime). [GitHub](https://github.com/inegmdev/qrag/issues/35)
+- [x] **GH#35** `pyproject.toml` — Default install downloads ~2.53 GB of CUDA libraries on Linux. Fixed by GH#38: torch+sentence-transformers removed entirely; onnxruntime (~30 MB) used instead. PR #39 superseded. [GitHub](https://github.com/inegmdev/qrag/issues/35)
 
-- [ ] **GH#38** `embedder.py`, `pyproject.toml` — Replace sentence-transformers+torch with onnxruntime to eliminate CUDA baggage for all package managers (pip/pipx/uv). Reduces install from ~2.53 GB to ~30 MB for everyone. [GitHub](https://github.com/inegmdev/qrag/issues/38)
+- [x] **GH#38** `embedder.py`, `pyproject.toml` — Replace sentence-transformers+torch with onnxruntime to eliminate CUDA baggage for all package managers (pip/pipx/uv). Reduces install from ~2.53 GB to ~30 MB for everyone. Fixed: onnxruntime+tokenizers; ONNX model from Xenova/all-MiniLM-L6-v2; mean-pool+L2-norm in numpy; device/precision params kept for CLI compat. [GitHub](https://github.com/inegmdev/qrag/issues/38)
 
 - [ ] **H0** `chunker.py`, `database.py` — Build-source relationship metadata: currently build system files (CMakeLists.txt, Cargo.toml, etc.) are indexed as isolated chunks. Phase 2 should enrich `code_chunks` with relational metadata — e.g. which source files belong to which cmake target/cargo bin/gradle task — so that RAG queries like "what files are compiled into the `my_app` executable?" return structured answers. Work: (1) add a `build_target` TEXT column to `code_chunks`; (2) parse cmake `add_executable`/`add_library` arguments to extract the source file list and back-link those source chunks to the target name; (3) do the same for Cargo `[[bin]]`→`src`, Gradle `sourceSets`, Maven `<module>` etc.; (4) expose `build_target` in `search_code` results so the AI agent can filter by target. Depends on C0.
 
@@ -129,3 +129,4 @@ When starting a new session, review this file and prefer working on higher-sever
 - [ ] **GH#46** [EXPLORE-F] `tui.py` — `qrag explore` (no args): interactive Rich TUI browser — navigate DBs, view stats panel, delete/push/download/activate via key bindings. [GitHub](https://github.com/inegmdev/qrag/issues/46)
 - [ ] **GH#47** [EXPLORE-G] `cli.py`, `database.py` — `qrag explore diff <v1> <v2>`: added/removed files + symbols, language % shift, new/removed keyword tags, `--json` output. [GitHub](https://github.com/inegmdev/qrag/issues/47)
 - [ ] **GH#48** [EXPLORE-H] `cli.py` — `qrag explore push --all-remotes`: sequential multi-remote push, continue-on-failure, per-remote re-run hints. [GitHub](https://github.com/inegmdev/qrag/issues/48) proportional CPU split (GH#27), MVC extraction to `tui.py`, scrolling log panel, worker-count header, parse `files/s` rate, status line with live error/warning counts, smart path truncation, `fmt_eta` formatter, terminal-too-small fallback, spinners on hub/search commands. Fixed in `feat/gh26-tui-improvements`. [GitHub](https://github.com/inegmdev/qrag/issues/26)
+
