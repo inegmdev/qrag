@@ -1,4 +1,4 @@
-﻿"""Download all-MiniLM-L6-v2 ONNX model into src/qrag/models/ for wheel bundling.
+"""Download all-MiniLM-L6-v2 ONNX model into src/qrag/models/ for wheel bundling.
 
 Run this once before building the wheel:
 

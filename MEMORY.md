@@ -1,4 +1,4 @@
-﻿# qrag — Project Memory
+# qrag — Project Memory
 
 > **How to use this file:** Read it at the start of every new Claude session. Update it before ending any session where significant design decisions, context, or accumulated discussion happened. It is intentionally dense — prefer references to full docs over inline prose.
 

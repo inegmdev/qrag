@@ -1,4 +1,4 @@
-﻿[build-system]
+[build-system]
 requires = ["setuptools", "huggingface_hub>=0.20"]
 build-backend = "setuptools.build_meta"
 
