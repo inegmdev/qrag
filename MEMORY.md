@@ -84,6 +84,7 @@ TEAM USAGE:
 | `src/qrag/doc_parser.py` | PDF (PyMuPDF) + HTML (BeautifulSoup) → doc sections |
 | `src/qrag/config.py` | `~/.qrag/config.json` load/save |
 | `src/qrag/github_distribution.py` | GitHub Releases API for push/download/list |
+| `src/qrag/zip_distribution.py` | ZIP-based export/import for offline sharing (AD-13) |
 
 **User data layout:**
 ```
@@ -144,6 +145,7 @@ Full authoritative list: [`docs/BACKLOG.md`](docs/BACKLOG.md).
 | ~~GH#35~~ | — | Resolved by GH#38 / PR #55 |
 | ~~GH#38~~ | — | Resolved — onnxruntime refactor done in PR #55 |
 | #55 | `fix/gh38-onnxruntime-embedder` | Merged — onnxruntime replaces torch+sentence-transformers (~30 MB) |
+| #57 | `claude/refine-local-plan-ashv96` | Merged — `qrag explore export/import` ZIP-based offline sharing |
 | GH#49 | — | Open — [EPIC] qrag explore |
 | GH#41–48 | — | Open — explore sub-issues (implement in order) |
 
@@ -176,7 +178,7 @@ Full authoritative list: [`docs/BACKLOG.md`](docs/BACKLOG.md).
 2. Read [`docs/BACKLOG.md`](docs/BACKLOG.md)
 3. Sync GitHub issues: fetch open issues and add any not yet in backlog
 4. Check `git log --oneline -10` for recent changes
-5. Priority order: GH#41 (explore MVP) → H0/H3/H4/H6 → M items
+5. Priority order: GH#41 (explore list+stats MVP) → H0/H3/H4/H6 → M items
 6. Before ending: update `docs/BACKLOG.md` checkboxes, update this file, update `docs/ARCHITECTURE.md`
 
 
