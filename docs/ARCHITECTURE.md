@@ -596,3 +596,30 @@ flowchart TD
     INF --> POOL["mean_pool + L2 normalize"]
     POOL --> EMB["float32 embeddings [B, 384]"]
 ```
+
+---
+
+## AD-13: ZIP-Based Database Export / Import (EXPLORE-ZIP)
+
+**Decision:** `qrag explore export <version>` and `qrag explore import <file.zip>` provide offline peer-to-peer database sharing via a self-contained ZIP, ahead of the GitHub/JFrog remote backends (GH#42–45). All logic lives in `zip_distribution.py`; no new runtime dependencies (stdlib `zipfile`, `hashlib`, `shutil`).
+
+**Why:** Teams need to transfer pre-built databases to air-gapped machines or share with colleagues who don't have GitHub access. ZIP is universally readable, doesn't require auth, and is trivially emailed or copied over SCP/USB.
+
+**Trade-off:** No deduplication or delta transfer — the full ZIP is written even if only `docs.db` changed. Acceptable at MVP; future `explore push` to a proper remote will supersede this for large databases.
+
+```mermaid
+flowchart TD
+    EXP["qrag explore export VERSION"]
+    EXP --> VDIR["CACHE_DIR/VERSION/\ncode.db · docs.db\nconfig.json · build-report.txt"]
+    VDIR --> SHA["_sha256() per file\nhashlib.sha256 / 65 KB chunks"]
+    SHA --> MAN["manifest.json\n{ version, exported_at,\n  embedding_model, files: {sha256, size} }"]
+    MAN --> ZIP["version.zip\nZIP_DEFLATED\nversion/ prefix on every entry"]
+
+    IMP["qrag explore import FILE.zip"]
+    IMP --> RMAN["read manifest.json\nfrom ZIP"]
+    RMAN --> CONF["conflict check\nCAHCE_DIR/target exists?\n--yes or [y/N]"]
+    CONF --> EXT["extract files\nstrip top-level prefix\n→ CACHE_DIR/target/"]
+    EXT --> VER["verify SHA-256\nevery file in manifest.files"]
+    VER -->|pass| REG["add_active_version(target)"]
+    VER -->|fail| CLN["shutil.rmtree(target_dir)\nClickException"]
+```
