@@ -143,7 +143,7 @@ Full authoritative list: [`docs/BACKLOG.md`](docs/BACKLOG.md).
 | ~~#39~~ | `fix/gh35-cpu-only-torch-default` | Superseded by PR #55 (GH#38) |
 | ~~GH#35~~ | — | Resolved by GH#38 / PR #55 |
 | ~~GH#38~~ | — | Resolved — onnxruntime refactor done in PR #55 |
-| **#55** | `fix/gh38-onnxruntime-embedder` | **Open** — onnxruntime replaces torch+sentence-transformers (~30 MB) |
+| #55 | `fix/gh38-onnxruntime-embedder` | Merged — onnxruntime replaces torch+sentence-transformers (~30 MB) |
 | GH#49 | — | Open — [EPIC] qrag explore |
 | GH#41–48 | — | Open — explore sub-issues (implement in order) |
 
