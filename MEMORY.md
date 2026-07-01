@@ -147,7 +147,8 @@ Full authoritative list: [`docs/BACKLOG.md`](docs/BACKLOG.md).
 | #55 | `fix/gh38-onnxruntime-embedder` | Merged — onnxruntime replaces torch+sentence-transformers (~30 MB) |
 | GH#49 | — | Open — [EPIC] qrag explore |
 | GH#41–48 | — | Open — explore sub-issues (implement in order) |
-| #58 | `claude/gpu-enabling-docs-la8bet` | Open — awaiting review — real GPU embedding (ISSUE-008/AD-14): fixed `resolve_device` CUDA detection, split `onnxruntime`/`onnxruntime-gpu` into `[cpu]`/`[gpu]` extras, documented Linux/Windows/WSL GPU prerequisites in README |
+| #58 | `claude/gpu-enabling-docs-la8bet` | Merged — real GPU embedding (ISSUE-008/AD-14): fixed `resolve_device` CUDA detection, split `onnxruntime`/`onnxruntime-gpu` into `[cpu]`/`[gpu]` extras, documented Linux/Windows/WSL GPU prerequisites in README |
+| #59 | `claude/gpu-enabling-docs-la8bet` | Open — awaiting review — fixes `_ensure_build_deps()` stale `build-gpu` extra reference left over after PR #58's `[cpu]`/`[gpu]` split; found via a real `qrag[gpu]` install |
 
 ---
 
