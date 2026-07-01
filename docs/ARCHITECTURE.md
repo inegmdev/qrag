@@ -715,3 +715,28 @@ sequenceDiagram
         P->>T: total changed → task._reset() (rare, acceptable)
     end
 ```
+
+---
+
+## AD-17: Checkpoint Flushing Must Loop, Not `if`, Per Queue Item
+
+**Decision:** In `_consume_and_embed()` (`cli.py`), the `_CHECKPOINT_SIZE`-chunk flush checks — both while draining the live queue and in the final "drain remainders" step — use `while len(pending) >= _CHECKPOINT_SIZE` instead of `if`, and the final drain flushes in `_CHECKPOINT_SIZE`-sized batches in a loop rather than passing the entire remaining backlog to `_flush_*_batch()` in one call.
+
+**Why:** The producer queue delivers one item per *file*, not per chunk. A single large file (e.g. a doc with 60k+ sections) can hand back many multiples of `_CHECKPOINT_SIZE` chunks in one queue item. With the old `if` check, only one 1,000-chunk checkpoint drained per queue item — the rest of that file's chunks stayed in `pending_doc`/`pending_code` until either the next queue item arrived (which might never happen, e.g. a 1-file build) or the loop's sentinels fired and execution fell through to "drain remainders." That step used to flush the *entire* remaining backlog (tens of thousands of chunks) in a single `_flush_*_batch()` call, and `on_embed_batch()` — the only hook that updates the TUI — wasn't invoked until that whole call returned. The result: the TUI froze on the last live checkpoint's numbers (e.g. "1,000 chunks / 203 chunks/s") for however long it took to embed everything else, even though embedding was progressing the whole time.
+
+**Trade-off:** None — this only affects how often progress is reported, not what gets embedded or in what order.
+
+```mermaid
+flowchart TD
+    Q["Queue item: 1 file → 60,176 doc chunks"] --> EXT["pending_doc.extend(payload)\npending_doc now has 60,176 chunks"]
+    EXT --> OLD{"OLD: if len >= 1000"}
+    OLD -->|"flushes once"| C1["1,000 chunks embedded\nTUI shows 1,000 chunks"]
+    C1 --> STUCK["59,176 chunks left in pending_doc\nno more queue items → sentinel fires"]
+    STUCK --> DRAIN_OLD["Drain remainders (OLD):\n_flush_doc_batch(all 59,176) in ONE call"]
+    DRAIN_OLD --> FROZEN["on_embed_batch() not called\nuntil ALL 59,176 embedded\nTUI frozen for the whole duration"]
+
+    EXT --> NEW{"NEW: while len >= 1000"}
+    NEW -->|"loops"| C2["Flush 1,000 → emit → repeat\nuntil < 1000 remain"]
+    C2 --> DRAIN_NEW["Drain remainders (NEW):\nsame 1,000-chunk loop"]
+    DRAIN_NEW --> LIVE["on_embed_batch() fires every 1,000 chunks\nTUI updates continuously"]
+```

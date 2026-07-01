@@ -94,6 +94,8 @@ When starting a new session, review this file and prefer working on higher-sever
 
 - [x] **M8** `tui.py:271-299` — Embed row's ETA column always showed `—` during `qrag build`. Root cause: `on_embed_batch()` recomputed the embed task's `total` on every batch from a jittery rolling estimate, and Rich's `Progress.update()` calls `task._reset()` (wiping the speed-sample history) whenever `total` changes — so `time_remaining` never had two samples to compute a speed from. Fixed by only updating `total` when the new estimate drifts >10% from the current value. See AD-16.
 
+- [x] **M9** `cli.py:904-936` — Embed chunk count/rate froze for many minutes on large single-file builds (e.g. a 60k-chunk PDF). Root cause: the checkpoint flush in `_consume_and_embed` used `if len(pending) >= _CHECKPOINT_SIZE` instead of a loop, so only one 1,000-chunk checkpoint drained per queue item; a file producing far more than `_CHECKPOINT_SIZE` chunks left the rest to the final "drain remainders" step, which embedded the *entire* backlog in a single `_flush_*_batch()` call before reporting any progress — the TUI stayed frozen on the last live checkpoint's numbers for as long as that call took. Fixed by looping both the live checkpoint checks and the final drain in `_CHECKPOINT_SIZE`-sized batches so `on_embed_batch()` fires every 1,000 chunks regardless of how the backlog accumulated.
+
 ---
 
 ## Low — Nice-to-Have

@@ -901,7 +901,11 @@ def _consume_and_embed(
         if layout is not None:
             layout.on_file_parsed(abs_path, root, fr.chunks, elapsed, skipped, skip_reason)
 
-        if db_path and len(pending_code) >= _CHECKPOINT_SIZE:
+        # A single large file can hand back many multiples of _CHECKPOINT_SIZE
+        # chunks in one queue item, so this must drain in a loop — an `if` only
+        # peels off one checkpoint and leaves the rest to the final drain below,
+        # which would then embed everything else in one un-reported chunk.
+        while db_path and len(pending_code) >= _CHECKPOINT_SIZE:
             batch, pending_code = pending_code[:_CHECKPOINT_SIZE], pending_code[_CHECKPOINT_SIZE:]
             t0 = time.monotonic()
             n = _flush_code_batch(batch, db_path, device, precision, batch_size)
@@ -910,7 +914,7 @@ def _consume_and_embed(
             _flush_code_manifest()
             _emit_embed(n, time.monotonic() - t0)
 
-        if ddb_path and len(pending_doc) >= _CHECKPOINT_SIZE:
+        while ddb_path and len(pending_doc) >= _CHECKPOINT_SIZE:
             batch, pending_doc = pending_doc[:_CHECKPOINT_SIZE], pending_doc[_CHECKPOINT_SIZE:]
             t0 = time.monotonic()
             n = _flush_doc_batch(batch, ddb_path, device, precision, batch_size)
@@ -919,19 +923,22 @@ def _consume_and_embed(
             _flush_doc_manifest()
             _emit_embed(n, time.monotonic() - t0)
 
-    # Drain remainders
-    if db_path and pending_code:
+    # Drain remainders — chunked the same way as the live loop above so the
+    # TUI keeps reporting progress instead of freezing on one giant flush.
+    while db_path and pending_code:
+        batch, pending_code = pending_code[:_CHECKPOINT_SIZE], pending_code[_CHECKPOINT_SIZE:]
         t0 = time.monotonic()
-        n = _flush_code_batch(pending_code, db_path, device, precision, batch_size)
+        n = _flush_code_batch(batch, db_path, device, precision, batch_size)
         code_stored += n
-        _code_flushed += len(pending_code)
+        _code_flushed += len(batch)
         _flush_code_manifest()
         _emit_embed(n, time.monotonic() - t0)
-    if ddb_path and pending_doc:
+    while ddb_path and pending_doc:
+        batch, pending_doc = pending_doc[:_CHECKPOINT_SIZE], pending_doc[_CHECKPOINT_SIZE:]
         t0 = time.monotonic()
-        n = _flush_doc_batch(pending_doc, ddb_path, device, precision, batch_size)
+        n = _flush_doc_batch(batch, ddb_path, device, precision, batch_size)
         docs_stored += n
-        _doc_flushed += len(pending_doc)
+        _doc_flushed += len(batch)
         _flush_doc_manifest()
         _emit_embed(n, time.monotonic() - t0)
 
