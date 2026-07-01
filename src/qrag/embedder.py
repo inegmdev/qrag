@@ -18,18 +18,28 @@ _HF_REPO = f"Xenova/{MODEL_NAME}"
 _MODEL_FILES = ["tokenizer.json", "tokenizer_config.json", "onnx/model.onnx"]
 
 
+def _cuda_provider_available() -> bool:
+    import onnxruntime as ort
+
+    return "CUDAExecutionProvider" in ort.get_available_providers()
+
+
 def resolve_device(requested: str) -> str:
-    """Return 'cpu'. Device parameter is kept for CLI compatibility."""
+    """Resolve the requested device against onnxruntime's available providers."""
+    if requested == "auto":
+        return "cuda" if _cuda_provider_available() else "cpu"
     if requested == "cuda":
-        raise ValueError(
-            "CUDA requested but the onnxruntime-cpu backend does not support GPU inference. "
-            "Install onnxruntime-gpu to enable GPU acceleration."
-        )
+        if not _cuda_provider_available():
+            raise ValueError(
+                "CUDA requested but onnxruntime has no CUDAExecutionProvider available. "
+                "Install onnxruntime-gpu (qrag[gpu]) and ensure CUDA 12.x + cuDNN 9 are on your system."
+            )
+        return "cuda"
     return "cpu"
 
 
 def default_batch_size(device: str) -> int:
-    return 256
+    return 1024 if device == "cuda" else 256
 
 
 def _locate_model_dir() -> pathlib.Path | None:
@@ -103,7 +113,7 @@ def _download_model() -> pathlib.Path:
     return _RUNTIME_MODEL
 
 
-def _load():
+def _load(device: str = "cpu"):
     global _session, _tokenizer
     if _session is not None:
         return _session, _tokenizer
@@ -125,8 +135,9 @@ def _load():
     except Exception as exc:
         _raise_model_load_error(exc)
 
+    providers = ["CUDAExecutionProvider", "CPUExecutionProvider"] if device == "cuda" else ["CPUExecutionProvider"]
     try:
-        sess = ort.InferenceSession(str(onnx_path), providers=["CPUExecutionProvider"])
+        sess = ort.InferenceSession(str(onnx_path), providers=providers)
     except Exception as exc:
         _raise_model_load_error(exc)
 
@@ -148,7 +159,7 @@ def _l2_normalize(x: np.ndarray) -> np.ndarray:
 
 
 def embed(texts: Sequence[str], device: str = "cpu", precision: str = "float32") -> list[list[float]]:
-    session, tokenizer = _load()
+    session, tokenizer = _load(device)
 
     encodings = tokenizer.encode_batch(list(texts))
     input_ids = np.array([enc.ids for enc in encodings], dtype=np.int64)
