@@ -115,43 +115,29 @@ qrag hub download v1.1    # auto-added to the active set
 
 ### 1. Install qrag with build dependencies
 
-> **Install size:** The CPU install (`[build,cpu]`) downloads **~220 MB**. GPU acceleration (`[build,gpu]`, alias `[full]`) swaps in `onnxruntime-gpu` — opt in only if you have an NVIDIA GPU and have set up the CUDA prerequisites below.
+> **Install size:** The CPU install (`[build,cpu]`) downloads **~220 MB**. GPU acceleration (`[build,gpu]`, alias `[full]`) swaps in `onnxruntime-gpu` plus the CUDA/cuDNN runtime (~600 MB, pulled in as ordinary pip packages) — opt in only if you have an NVIDIA GPU.
 
 #### GPU Prerequisites (skip if using CPU)
 
-`onnxruntime-gpu` requires **CUDA 12.x and cuDNN 9** to be present on the system — the Python package alone is not enough.
+`qrag[gpu]` installs the CUDA 12.x/cuDNN 9 runtime **as pip packages** (`nvidia-cuda-runtime-cu12`, `nvidia-cudnn-cu12`) — no system-wide CUDA Toolkit install is required. The only thing you need at the system level is the **NVIDIA driver** itself (drivers require a kernel module and can't be pip-installed).
 
 <details><summary><b>Linux</b></summary>
 
-Install the CUDA Toolkit via your distro's package manager or NVIDIA's repo, e.g.:
-
-```bash
-# Debian/Ubuntu
-sudo apt install nvidia-cuda-toolkit
-```
-
-Verify with `nvidia-smi` (driver) and `nvcc --version` (toolkit, should report CUDA 12.x).
+Install the latest NVIDIA driver via your distro's package manager or NVIDIA's repo, then verify with `nvidia-smi`.
 
 </details>
 
 <details><summary><b>Windows</b></summary>
 
-1. Install the latest NVIDIA driver from https://www.nvidia.com/Download/index.aspx
-2. Install the CUDA Toolkit 12.x from https://developer.nvidia.com/cuda-downloads
-3. Install cuDNN 9 from https://developer.nvidia.com/cudnn and add it to your `PATH`
+Install the latest NVIDIA driver from https://www.nvidia.com/Download/index.aspx, then verify with `nvidia-smi`.
 
 </details>
 
 <details><summary><b>WSL (Windows Subsystem for Linux)</b></summary>
 
-> **Do not install an NVIDIA driver inside WSL.** GPU passthrough is provided by the Windows host driver alone — installing a Linux driver inside the WSL distro breaks it. Only install the CUDA Toolkit inside WSL.
+> **Do not install an NVIDIA driver inside WSL.** GPU passthrough is provided by the Windows host driver alone — installing a Linux driver inside the WSL distro breaks it.
 
-1. Install the NVIDIA driver on the **Windows host** (not inside WSL) from https://www.nvidia.com/Download/index.aspx — this driver includes WSL2 GPU support.
-2. Inside your WSL distro, install the **WSL-specific CUDA Toolkit** (do not install `nvidia-driver-*` packages):
-   ```bash
-   sudo apt install cuda-toolkit-12-*
-   ```
-3. Verify with `nvidia-smi` inside WSL — it should report the host's GPU via passthrough.
+Install the NVIDIA driver on the **Windows host only** (not inside WSL) from https://www.nvidia.com/Download/index.aspx — it includes WSL2 GPU passthrough support. Then verify with `nvidia-smi` run *inside* WSL — it should report the host's GPU.
 
 </details>
 
@@ -161,7 +147,7 @@ Verify with `nvidia-smi` (driver) and `nvcc --version` (toolkit, should report C
 # CPU — ~220 MB
 uv tool install "git+https://github.com/inegmdev/qrag.git@main[build,cpu]"
 
-# GPU-accelerated — requires NVIDIA GPU + CUDA 12.x + cuDNN 9 (see prerequisites above)
+# GPU-accelerated — requires an NVIDIA driver (see prerequisites above)
 uv tool install "git+https://github.com/inegmdev/qrag.git@main[build,gpu]"
 # or, equivalently:
 uv tool install "git+https://github.com/inegmdev/qrag.git@main[full]"
@@ -173,7 +159,7 @@ uv tool install "git+https://github.com/inegmdev/qrag.git@main[full]"
 # CPU — ~220 MB
 pipx install "git+https://github.com/inegmdev/qrag.git[build,cpu]"
 
-# GPU-accelerated — requires NVIDIA GPU + CUDA 12.x + cuDNN 9 (see prerequisites above)
+# GPU-accelerated — requires an NVIDIA driver (see prerequisites above)
 pipx install "git+https://github.com/inegmdev/qrag.git[full]"
 ```
 
@@ -183,7 +169,7 @@ pipx install "git+https://github.com/inegmdev/qrag.git[full]"
 # CPU — ~220 MB
 pip install "git+https://github.com/inegmdev/qrag.git[build,cpu]"
 
-# GPU-accelerated — requires NVIDIA GPU + CUDA 12.x + cuDNN 9 (see prerequisites above)
+# GPU-accelerated — requires an NVIDIA driver (see prerequisites above)
 pip install "git+https://github.com/inegmdev/qrag.git[full]"
 ```
 
@@ -301,10 +287,13 @@ A: Run this one-liner — it should list `CUDAExecutionProvider`:
 ```bash
 python -c "import onnxruntime; print(onnxruntime.get_available_providers())"
 ```
-If it's missing, confirm you installed `[gpu]` (not `[cpu]`) and that CUDA 12.x + cuDNN 9 are on your system — see [GPU Prerequisites](#gpu-prerequisites-skip-if-using-cpu).
+If it's missing, confirm you installed `[gpu]` (not `[cpu]`) and have a working NVIDIA driver — see [GPU Prerequisites](#gpu-prerequisites-skip-if-using-cpu).
 
 **Q: `qrag build --device=cuda` fails with "CUDA requested but onnxruntime has no CUDAExecutionProvider available"**  
-A: Either `onnxruntime-gpu` isn't installed (reinstall with `[gpu]`) or the system-level CUDA/cuDNN prerequisites are missing — see [GPU Prerequisites](#gpu-prerequisites-skip-if-using-cpu).
+A: `onnxruntime-gpu` isn't installed — reinstall with `qrag[build,gpu]`.
+
+**Q: `qrag build --device=cuda` fails with "Failed to initialize the CUDA execution provider" / `libcudart.so` not found**  
+A: `qrag[gpu]` installs the CUDA/cuDNN runtime as pip packages and pins `onnxruntime-gpu` to a version compatible with them (`>=1.21,<1.27`) — if you pinned a different `onnxruntime-gpu` version yourself, or have a system-wide CUDA install with a mismatched major version on your library path, that's the likely cause. Reinstall with `uv tool install --reinstall 'qrag[build,gpu]'` and make sure the NVIDIA driver is up to date.
 
 ---
 

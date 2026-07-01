@@ -32,7 +32,8 @@ def resolve_device(requested: str) -> str:
         if not _cuda_provider_available():
             raise ValueError(
                 "CUDA requested but onnxruntime has no CUDAExecutionProvider available. "
-                "Install onnxruntime-gpu (qrag[gpu]) and ensure CUDA 12.x + cuDNN 9 are on your system."
+                "Install onnxruntime-gpu (qrag[gpu]) — it pulls in the CUDA/cuDNN runtime as pip "
+                "packages, so no system-wide CUDA Toolkit install is required."
             )
         return "cuda"
     return "cpu"
@@ -136,9 +137,28 @@ def _load(device: str = "cpu"):
         _raise_model_load_error(exc)
 
     providers = ["CUDAExecutionProvider", "CPUExecutionProvider"] if device == "cuda" else ["CPUExecutionProvider"]
+    if device == "cuda":
+        try:
+            # Makes onnxruntime find the pip-installed nvidia-cuda-runtime-cu12/
+            # nvidia-cudnn-cu12 libraries; without this, CUDAExecutionProvider
+            # fails with "libcudart.so.* not found" even though the packages
+            # are installed, since they aren't on the default library path.
+            ort.preload_dlls(cuda=True, cudnn=True, msvc=False)
+        except Exception:
+            pass
+
     try:
         sess = ort.InferenceSession(str(onnx_path), providers=providers)
     except Exception as exc:
+        if device == "cuda":
+            raise RuntimeError(
+                f"Failed to initialize the CUDA execution provider: {exc}\n\n"
+                "qrag[gpu] installs the CUDA/cuDNN runtime as pip packages "
+                "(nvidia-cuda-runtime-cu12, nvidia-cudnn-cu12) — reinstall with:\n"
+                "  uv tool install --reinstall 'qrag[build,gpu]'\n"
+                "If you have a system-wide CUDA install instead, make sure it's on your\n"
+                "library search path (LD_LIBRARY_PATH on Linux, PATH on Windows)."
+            ) from None
         _raise_model_load_error(exc)
 
     _tokenizer = tok
