@@ -1,7 +1,7 @@
 # 008 — GPU-accelerated embedding + multi-core chunking
 
 **Type:** AFK  
-**Status:** Open  
+**Status:** Resolved — see `docs/ARCHITECTURE.md` AD-14  
 **Blocked by:** None — can start immediately
 
 ---
@@ -14,15 +14,15 @@ Tree-sitter chunking is CPU-bound and has no GPU path — parallelism here is mu
 
 ## Acceptance criteria
 
-- [ ] `rhub prepare` accepts `--device=auto|cpu|cuda` (default `auto`)
-- [ ] `auto` mode: detects CUDA via `torch.cuda.is_available()`; falls back to CPU silently if not found
-- [ ] Device selected is printed at prepare session start: e.g., `[prepare] embedding device: cuda` or `[prepare] embedding device: cpu`
-- [ ] `rhub prepare` accepts `--limit-cpu=N` (default: all available cores)
-- [ ] Sanity check: if `N > os.cpu_count()`, exit with a clear error message before starting
-- [ ] Chunking stage uses `concurrent.futures.ProcessPoolExecutor(max_workers=N)` (or equivalent)
-- [ ] Both flags are documented in `--help` output
-- [ ] Prepare wall-clock time is measurably faster on a multi-core machine with >10 files
+- [x] `qrag build` accepts `--device=auto|cpu|cuda` (default `auto`)
+- [x] `auto` mode: detects CUDA via `onnxruntime.get_available_providers()` (project moved off `torch`/`sentence-transformers` to `onnxruntime` in GH#38, so detection uses onnxruntime's provider list instead); falls back to CPU silently if not found
+- [x] Device selected is printed at build session start: e.g., `[build] device=cuda batch-size=1024 precision=float32`
+- [x] `qrag build` accepts `--limit-cpu=N` (default: all available cores)
+- [x] Sanity check: if `N > os.cpu_count()`, exit with a clear error message before starting
+- [x] Chunking stage uses `concurrent.futures.ProcessPoolExecutor(max_workers=N)`
+- [x] Both flags are documented in `--help` output
+- [x] Build wall-clock time is measurably faster on a multi-core machine with >10 files (parallel chunking pre-existing; GPU embedding batch size raised to 1024 for throughput)
 
 ## Updates
 
-<!-- Append timestamped notes here as work progresses -->
+- 2026-07-01: `--limit-cpu` + `ProcessPoolExecutor` chunking and the `--device` CLI flag already existed from prior work. What was missing: `resolve_device()` always returned `"cpu"` and raised a `ValueError` on `"cuda"` — GPU was never actually reachable, and `onnxruntime-gpu` couldn't be installed without conflicting with the base `onnxruntime` dependency. Fixed both: real CUDA detection via `onnxruntime.get_available_providers()`, `_load()` passes `CUDAExecutionProvider` to `InferenceSession`, and `onnxruntime`/`onnxruntime-gpu` split into `[cpu]`/`[gpu]` extras in `pyproject.toml`. README updated with per-OS (Linux/Windows/WSL) GPU prerequisites.

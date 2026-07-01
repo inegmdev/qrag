@@ -40,7 +40,7 @@
 | Rich doc metadata (name, revision, status, page, section hierarchy) | ✅ PR #17 |
 | Rich code metadata (parent block, call depth, chunk index within parent) | ✅ PR #17 |
 | PyPI publish | ❌ Not done |
-| GPU embedding / multicore chunking | ❌ Not done |
+| GPU embedding / multicore chunking | ✅ ISSUE-008 / AD-14 |
 
 ---
 
@@ -109,6 +109,7 @@ Full authoritative list: [`docs/BACKLOG.md`](docs/BACKLOG.md).
 | ~~**GH#13, GH#18, GH#23, GH#26, GH#28, GH#29, GH#31, GH#32**~~ | ~~High~~ | Resolved |
 | ~~**GH#35**~~ | ~~High~~ | Resolved by GH#38 / PR #55 |
 | ~~**GH#38**~~ | ~~High~~ | Resolved in PR #55 — onnxruntime + tokenizers, ~30 MB |
+| ~~**ISSUE-008**~~ | ~~High~~ | Resolved — real CUDA detection + `[cpu]`/`[gpu]` extras (AD-14) |
 | **H0** | High | Build-source relationship metadata (cmake targets ↔ source files) |
 | **H1–H6, GH#27, GH#30** | High | See `docs/BACKLOG.md` |
 | **GH#49** | Feature | [EPIC] `qrag explore` — replaces `hub`; TUI + multi-remote (GH#41–48) |
@@ -125,7 +126,7 @@ Full authoritative list: [`docs/BACKLOG.md`](docs/BACKLOG.md).
 
 ---
 
-## Git & PR State (as of 2026-06-28)
+## Git & PR State (as of 2026-07-01)
 
 | PR / Issue | Branch | State |
 |------------|--------|-------|
@@ -146,6 +147,7 @@ Full authoritative list: [`docs/BACKLOG.md`](docs/BACKLOG.md).
 | #55 | `fix/gh38-onnxruntime-embedder` | Merged — onnxruntime replaces torch+sentence-transformers (~30 MB) |
 | GH#49 | — | Open — [EPIC] qrag explore |
 | GH#41–48 | — | Open — explore sub-issues (implement in order) |
+| #58 | `claude/gpu-enabling-docs-la8bet` | Open — awaiting review — real GPU embedding (ISSUE-008/AD-14): fixed `resolve_device` CUDA detection, split `onnxruntime`/`onnxruntime-gpu` into `[cpu]`/`[gpu]` extras, documented Linux/Windows/WSL GPU prerequisites in README |
 
 ---
 
@@ -160,7 +162,9 @@ Full authoritative list: [`docs/BACKLOG.md`](docs/BACKLOG.md).
 - **Function-level chunking** — tree-sitter identifies exact boundaries; large symbols auto-split with overlap
 - **Section-level doc chunking** — preserves heading hierarchy and page references
 - **Multi-DB fan-out** (PR #16) — `active_versions` list; MCP tools fan-out via ThreadPoolExecutor, merge by score, dedup
-- **`uv tool install`** as primary install method; `[tool.uv.sources]` pins torch to CPU wheel (AD-11)
+- **`uv tool install`** as primary install method; `[tool.uv.sources]` pins torch to CPU wheel (AD-11, superseded by AD-12)
+- **`onnxruntime` split into `[cpu]`/`[gpu]` extras** — no longer a base dependency; every install must pick one explicitly; `[full]` aliases `[build, gpu]` (AD-14)
+- **GPU detection is real** — `resolve_device()` checks `onnxruntime.get_available_providers()` for `CUDAExecutionProvider` instead of hardcoding CPU (AD-14)
 - **`qrag hub` → `qrag explore`** — hub is deprecated; explore replaces it with TUI + multi-remote support (AD-10)
 - **Multi-remote backends** planned: GitHub Releases (current), HuggingFace Hub, JFrog Artifactory, git+LFS
 - **Origin tracking** — downloaded DBs store `origin_remote` in `~/.qrag/<v>/config.json`

@@ -623,3 +623,35 @@ flowchart TD
     VER -->|pass| REG["add_active_version(target)"]
     VER -->|fail| CLN["shutil.rmtree(target_dir)\nClickException"]
 ```
+
+---
+
+## AD-14: Real GPU Embedding via onnxruntime-gpu (ISSUE-008)
+
+**Decision:** `resolve_device()` now performs real CUDA detection through `onnxruntime.get_available_providers()` instead of unconditionally returning `"cpu"`. `onnxruntime` is split out of the base dependencies into two mutually-exclusive extras — `[cpu]` (`onnxruntime`) and `[gpu]` (`onnxruntime-gpu`) — both pinned to `>=1.19,<2.0` (the version floor that requires CUDA 12.x + cuDNN 9). `[full]` becomes an alias for `[build, gpu]`.
+
+**Why:** AD-12 replaced `torch`+`sentence-transformers` with `onnxruntime` for install-size reasons, but as a side effect `resolve_device("cuda")` was left raising a `ValueError` and `auto` always resolved to `"cpu"` — GPU embedding was advertised (`--device` flag, README `[full]` extra) but never actually reachable. Additionally, `onnxruntime` and `onnxruntime-gpu` both occupy the same import namespace and cannot coexist, so `onnxruntime-gpu` could not be safely added as a plain extra on top of the base dependency — it had to replace it. Splitting into `[cpu]`/`[gpu]` extras is the only way `pip`/`uv` can produce a reproducible environment for either path.
+
+**Trade-off:** Every install command (including plain Consumer installs) must now explicitly pick `[cpu]` or `[gpu]` — `qrag` alone is no longer installable, since a bare install would resolve zero embedding backends. This is a one-time breaking change to install instructions, documented in the README's Consumer and Builder sections. GPU users also take on system-level CUDA/cuDNN maintenance burden that the CPU path avoids entirely; the README documents Linux/Windows/WSL prerequisites explicitly (including the WSL-specific gotcha that the NVIDIA driver must live on the Windows host, not inside the WSL distro).
+
+```mermaid
+flowchart TD
+    BUILD["qrag build --device=auto|cpu|cuda"]
+    BUILD --> RESOLVE["resolve_device(requested)"]
+    RESOLVE -->|"auto"| CHECK{"onnxruntime.get_available_providers()\ncontains CUDAExecutionProvider?"}
+    CHECK -->|yes| CUDA["device = cuda\nbatch_size = 1024"]
+    CHECK -->|no| CPU["device = cpu\nbatch_size = 256"]
+    RESOLVE -->|"cuda (explicit)"| CHECK2{"CUDAExecutionProvider\navailable?"}
+    CHECK2 -->|yes| CUDA
+    CHECK2 -->|no| ERR["ValueError:\ninstall onnxruntime-gpu (qrag[gpu])\n+ CUDA 12.x + cuDNN 9"]
+    RESOLVE -->|"cpu (explicit)"| CPU
+
+    CUDA --> LOAD["_load(device)\nInferenceSession providers=\n[CUDAExecutionProvider, CPUExecutionProvider]"]
+    CPU --> LOAD2["_load(device)\nInferenceSession providers=\n[CPUExecutionProvider]"]
+
+    subgraph PKG["pyproject.toml extras"]
+        CPUEXT["[cpu] → onnxruntime>=1.19,<2.0"]
+        GPUEXT["[gpu] → onnxruntime-gpu>=1.19,<2.0"]
+        FULLEXT["[full] → [build] + [gpu]"]
+    end
+```

@@ -13,15 +13,17 @@ Build semantic RAG databases from your code and docs — once per team, instant 
 ### 1. Install qrag
 
 ```bash
-uv tool install "git+https://github.com/inegmdev/qrag.git@main"
+uv tool install "git+https://github.com/inegmdev/qrag.git@main[cpu]"
 ```
+
+> The `[cpu]` extra installs the `onnxruntime` CPU backend, required even for running searches. Consumers never need `[gpu]` — that's only for database preparers running `qrag build`.
 
 > Don't have `uv`? Install it: https://docs.astral.sh/uv/getting-started/installation/
 
 **Upgrade to a newer version of qrag itself:**
 
 ```bash
-uv tool install --reinstall "git+https://github.com/inegmdev/qrag.git@main"
+uv tool install --reinstall "git+https://github.com/inegmdev/qrag.git@main[cpu]"
 ```
 
 ### 2. Point qrag at your team's database repository
@@ -113,37 +115,75 @@ qrag hub download v1.1    # auto-added to the active set
 
 ### 1. Install qrag with build dependencies
 
-> **Install size:** The default CPU install downloads **~220 MB**. Enabling GPU acceleration adds ~2.3 GB of CUDA libraries (cuBLAS, cuDNN, triton, etc.) — opt in only if you have an NVIDIA GPU.
+> **Install size:** The CPU install (`[build,cpu]`) downloads **~220 MB**. GPU acceleration (`[build,gpu]`, alias `[full]`) swaps in `onnxruntime-gpu` — opt in only if you have an NVIDIA GPU and have set up the CUDA prerequisites below.
+
+#### GPU Prerequisites (skip if using CPU)
+
+`onnxruntime-gpu` requires **CUDA 12.x and cuDNN 9** to be present on the system — the Python package alone is not enough.
+
+<details><summary><b>Linux</b></summary>
+
+Install the CUDA Toolkit via your distro's package manager or NVIDIA's repo, e.g.:
+
+```bash
+# Debian/Ubuntu
+sudo apt install nvidia-cuda-toolkit
+```
+
+Verify with `nvidia-smi` (driver) and `nvcc --version` (toolkit, should report CUDA 12.x).
+
+</details>
+
+<details><summary><b>Windows</b></summary>
+
+1. Install the latest NVIDIA driver from https://www.nvidia.com/Download/index.aspx
+2. Install the CUDA Toolkit 12.x from https://developer.nvidia.com/cuda-downloads
+3. Install cuDNN 9 from https://developer.nvidia.com/cudnn and add it to your `PATH`
+
+</details>
+
+<details><summary><b>WSL (Windows Subsystem for Linux)</b></summary>
+
+> **Do not install an NVIDIA driver inside WSL.** GPU passthrough is provided by the Windows host driver alone — installing a Linux driver inside the WSL distro breaks it. Only install the CUDA Toolkit inside WSL.
+
+1. Install the NVIDIA driver on the **Windows host** (not inside WSL) from https://www.nvidia.com/Download/index.aspx — this driver includes WSL2 GPU support.
+2. Inside your WSL distro, install the **WSL-specific CUDA Toolkit** (do not install `nvidia-driver-*` packages):
+   ```bash
+   sudo apt install cuda-toolkit-12-*
+   ```
+3. Verify with `nvidia-smi` inside WSL — it should report the host's GPU via passthrough.
+
+</details>
 
 #### with uv (recommended)
 
 ```bash
-# CPU — default, ~220 MB
-uv tool install "git+https://github.com/inegmdev/qrag.git@main[build]"
+# CPU — ~220 MB
+uv tool install "git+https://github.com/inegmdev/qrag.git@main[build,cpu]"
 
-# GPU-accelerated — ~2.5 GB, requires NVIDIA GPU + CUDA 12.4
-uv tool install "git+https://github.com/inegmdev/qrag.git@main[full]" --no-sources
+# GPU-accelerated — requires NVIDIA GPU + CUDA 12.x + cuDNN 9 (see prerequisites above)
+uv tool install "git+https://github.com/inegmdev/qrag.git@main[build,gpu]"
+# or, equivalently:
+uv tool install "git+https://github.com/inegmdev/qrag.git@main[full]"
 ```
 
 #### with pipx
 
 ```bash
-# CPU — default, ~220 MB
-pipx install "git+https://github.com/inegmdev/qrag.git[build]" \
-  --pip-args="--extra-index-url https://download.pytorch.org/whl/cpu"
+# CPU — ~220 MB
+pipx install "git+https://github.com/inegmdev/qrag.git[build,cpu]"
 
-# GPU-accelerated — ~2.5 GB, requires NVIDIA GPU
+# GPU-accelerated — requires NVIDIA GPU + CUDA 12.x + cuDNN 9 (see prerequisites above)
 pipx install "git+https://github.com/inegmdev/qrag.git[full]"
 ```
 
 #### with pip
 
 ```bash
-# CPU — install torch CPU wheel first, then qrag
-pip install torch --index-url https://download.pytorch.org/whl/cpu
-pip install "git+https://github.com/inegmdev/qrag.git[build]"
+# CPU — ~220 MB
+pip install "git+https://github.com/inegmdev/qrag.git[build,cpu]"
 
-# GPU-accelerated — ~2.5 GB, requires NVIDIA GPU
+# GPU-accelerated — requires NVIDIA GPU + CUDA 12.x + cuDNN 9 (see prerequisites above)
 pip install "git+https://github.com/inegmdev/qrag.git[full]"
 ```
 
@@ -163,6 +203,8 @@ qrag build \
   -i /path/to/docs/ \
   -o v1.0
 ```
+
+`--device` defaults to `auto`, which uses the GPU automatically if `[gpu]` is installed and CUDA is detected, falling back to CPU otherwise. Pass `--device=cpu` or `--device=cuda` to force a choice. The device in use is printed at the start of the build, e.g. `[build] device=cuda batch-size=1024 precision=float32`.
 
 **Supported source types:**
 
@@ -251,8 +293,18 @@ A: Set the `GITHUB_TOKEN` environment variable or run `gh auth login`.
 **Q: `build` fails with a missing-dependency error**  
 A: You need the build extras. Reinstall with:
 ```bash
-uv tool install --reinstall "git+https://github.com/inegmdev/qrag.git@main[build]"
+uv tool install --reinstall "git+https://github.com/inegmdev/qrag.git@main[build,cpu]"
 ```
+
+**Q: How do I check if GPU acceleration is set up correctly before running a full build?**  
+A: Run this one-liner — it should list `CUDAExecutionProvider`:
+```bash
+python -c "import onnxruntime; print(onnxruntime.get_available_providers())"
+```
+If it's missing, confirm you installed `[gpu]` (not `[cpu]`) and that CUDA 12.x + cuDNN 9 are on your system — see [GPU Prerequisites](#gpu-prerequisites-skip-if-using-cpu).
+
+**Q: `qrag build --device=cuda` fails with "CUDA requested but onnxruntime has no CUDAExecutionProvider available"**  
+A: Either `onnxruntime-gpu` isn't installed (reinstall with `[gpu]`) or the system-level CUDA/cuDNN prerequisites are missing — see [GPU Prerequisites](#gpu-prerequisites-skip-if-using-cpu).
 
 ---
 
