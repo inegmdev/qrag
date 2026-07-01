@@ -94,6 +94,10 @@ When starting a new session, review this file and prefer working on higher-sever
 
 - [x] **M8** `tui.py:271-299` — Embed row's ETA column always showed `—` during `qrag build`. Root cause: `on_embed_batch()` recomputed the embed task's `total` on every batch from a jittery rolling estimate, and Rich's `Progress.update()` calls `task._reset()` (wiping the speed-sample history) whenever `total` changes — so `time_remaining` never had two samples to compute a speed from. Fixed by only updating `total` when the new estimate drifts >10% from the current value. See AD-16.
 
+- [ ] **GH#53** `cli.py`, `embedder.py`, `tui.py` — Real-time live log file during `qrag build`: all log records currently stay in memory and only flush to disk on failure, so a long embedding phase (minutes to hours) is unobservable over SSH/tmux/CI. Add an unbuffered `FileHandler` at build start (`~/.qrag/logs/build-<ts>.log` + `build-latest.log` symlink), print the path, and log per-batch embedding progress. [GitHub](https://github.com/inegmdev/qrag/issues/53)
+
+- [ ] **GH#54** — docs: WSL2 + CUDA workaround for uv-managed installs. Documents a torch/CUDA ABI mismatch workaround for `qrag build --device cuda` under WSL2; superseded once GH#38's onnxruntime migration (already merged) removes the torch dependency — verify the workaround is now moot and close, or downgrade to a doc cleanup. [GitHub](https://github.com/inegmdev/qrag/issues/54)
+
 ---
 
 ## Low — Nice-to-Have
@@ -124,6 +128,8 @@ When starting a new session, review this file and prefer working on higher-sever
 
 > **GH#49 is the epic tracking issue.** Implement sub-issues in order #41 → #42 → #43 → #44 → #45 → #46 for vertical traceability. #47 and #48 are independent.
 
+- [ ] **GH#64** `database.py`, `github_distribution.py`, `cli.py` — Version-controlled database distribution with incremental SQL-row deltas: adds `content_hash` column to `code_chunks`/`doc_sections`, self-inverting FORWARD/ROLLBACK `.sql` delta files, and delta-aware `explore push`/`download`/`rollback`/`diff` so a team member on RevN only downloads changed rows instead of the full DB. Coordinates with the `qrag explore` redesign (GH#49). [GitHub](https://github.com/inegmdev/qrag/issues/64)
+- [ ] **GH#63** `doc_parser.py`, `pyproject.toml` — Parse Office document formats (`.docx`, `.xlsx`, `.pptx`, `.csv`, `.odt`, `.rtf`) via pure-Python libraries (`python-docx`, `openpyxl`, `python-pptx`, stdlib `csv`, `striprtf`); extends `DocSection.doc_type` and `parse_doc_file()` dispatch; no system-level deps (no LibreOffice/Tesseract). [GitHub](https://github.com/inegmdev/qrag/issues/63)
 - [ ] **GH#49** [EPIC] — `qrag explore` replaces `qrag hub` entirely; unified TUI + multi-remote database explorer. Tracking issue for GH#41–48. [GitHub](https://github.com/inegmdev/qrag/issues/49)
 - [ ] **GH#41** [EXPLORE-A] `cli.py`, `database.py` — MVP: `qrag explore list` (local Rich table) + `qrag explore stats <version>` (language %, symbol taxonomy, keyword tag cloud, staleness, coverage). Replaces `hub list`. [GitHub](https://github.com/inegmdev/qrag/issues/41)
 - [ ] **GH#42** [EXPLORE-B] `cli.py`, `github_distribution.py` — GitHub remote integration: unified local+remote list, `explore download`, origin-remote stored in `~/.qrag/<v>/config.json`. Auth: `GITHUB_TOKEN` env → `gh` CLI. [GitHub](https://github.com/inegmdev/qrag/issues/42)
