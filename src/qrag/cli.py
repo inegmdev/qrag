@@ -544,14 +544,14 @@ def _ensure_build_deps() -> None:
     click.echo(
         f"Error: build dependencies not installed (missing: {', '.join(missing)}).\n"
         "\n"
-        "Re-install qrag with the 'build' extras:\n"
-        "  uv tool install --reinstall 'qrag[build]'\n"
-        "  pip install --upgrade 'qrag[build]'\n"
-        "  pipenv install 'qrag[build]'\n"
-        "  poetry add qrag --extras build\n"
+        "Re-install qrag with the 'build' and 'cpu' extras:\n"
+        "  uv tool install --reinstall 'qrag[build,cpu]'\n"
+        "  pip install --upgrade 'qrag[build,cpu]'\n"
+        "  pipenv install 'qrag[build,cpu]'\n"
+        "  poetry add qrag --extras build --extras cpu\n"
         "\n"
-        "For GPU-accelerated embedding also include 'build-gpu':\n"
-        "  uv tool install --reinstall 'qrag[build,build-gpu]'\n",
+        "For GPU-accelerated embedding, use 'gpu' instead of 'cpu':\n"
+        "  uv tool install --reinstall 'qrag[build,gpu]'\n",
         err=True,
     )
     sys.exit(1)
