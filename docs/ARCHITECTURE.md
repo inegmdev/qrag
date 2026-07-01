@@ -680,3 +680,38 @@ flowchart TD
         DRIVER["NVIDIA driver only\n(kernel module — can't be pip-installed)"]
     end
 ```
+
+---
+
+## AD-16: Stabilize Embed Task `total` to Fix Stuck ETA Column
+
+**Decision:** In `BuildLayout.on_embed_batch()` (`tui.py`), only push a new `total` to the Rich `Progress` embed task when the rolling estimate (`est_total`) drifts more than 10% from the task's current `total`. Otherwise reuse the existing `total` unchanged.
+
+**Why:** Rich's `Progress.update()` calls `task._reset()` — which clears the rolling speed-sample deque used to compute `time_remaining` — every time the `total` argument differs from the task's current `total`. `on_embed_batch()` recomputes `est_total` from `avg_chunks_per_file * total_files` on every single batch, and that estimate jitters (±1 chunk, rounding) almost every call. The result: the embed task's `total` changed on nearly every update, wiping the speed samples before Rich ever had two samples far enough apart to compute a speed — so `_EtaColumn.render()`'s `task.time_remaining is None` branch fired every time, showing `—` for the entire embedding phase regardless of how long the build ran.
+
+**Trade-off:** The embed ETA now updates on a coarser total (only re-baselines on ≥10% swings), so it lags slightly when the true average chunks/file shifts sharply early in a build. This is preferable to an ETA that never renders.
+
+```mermaid
+sequenceDiagram
+    participant CB as on_embed_batch()
+    participant P as Rich Progress.update()
+    participant T as Task
+
+    Note over CB: before fix — every batch
+    CB->>P: update(total=est_total_jittery)
+    P->>T: total changed → task._reset()
+    Note over T: speed samples wiped
+    T-->>P: time_remaining = None
+    P-->>CB: ETA column renders "—"
+
+    Note over CB: after fix
+    CB->>CB: compare est_total vs current total
+    alt drift < 10%
+        CB->>P: update(total=current_total unchanged)
+        P->>T: total unchanged → samples kept
+        T-->>P: time_remaining = computed value
+    else drift >= 10%
+        CB->>P: update(total=est_total)
+        P->>T: total changed → task._reset() (rare, acceptable)
+    end
+```
