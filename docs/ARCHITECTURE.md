@@ -655,3 +655,28 @@ flowchart TD
         FULLEXT["[full] → [build] + [gpu]"]
     end
 ```
+
+---
+
+## AD-15: Pin onnxruntime-gpu to CUDA 12 line + pip-bundled CUDA/cuDNN runtime (corrects AD-14)
+
+**Decision:** Tighten `[gpu]` to `onnxruntime-gpu[cuda,cudnn]>=1.21,<1.27` (was `>=1.19,<2.0`). Call `onnxruntime.preload_dlls(cuda=True, cudnn=True, msvc=False)` in `_load()` before creating a CUDA `InferenceSession`. Drop the README's system-wide CUDA Toolkit install instructions — only the NVIDIA driver is required at the OS level now.
+
+**Why:** Real-world testing of AD-14 surfaced two bugs. First, `onnxruntime-gpu`'s PyPI releases silently changed their CUDA major-version dependency: 1.21–1.26 target CUDA 12 (`nvidia-cuda-runtime-cu12`), but **1.27.0 switched to CUDA 13** (`nvidia-cuda-runtime-cu13`) — confirmed via PyPI `requires_dist` metadata. AD-14's `<2.0` upper bound let the resolver pick 1.27.0, which then failed at runtime with `libcudart.so.13: cannot open shared object file` on any machine with a CUDA 12 system install (i.e., everyone following AD-14's own documented prerequisites). Second, `onnxruntime-gpu>=1.21` ships optional `[cuda]`/`[cudnn]` pip extras that install the CUDA/cuDNN runtime as ordinary Python wheels — but onnxruntime doesn't search `site-packages` for them by default; `preload_dlls()` (added in 1.21.0) is required to make the pip-installed libraries discoverable. Using both together eliminates the system-level CUDA Toolkit install entirely, which is a strictly simpler and more reliable setup than AD-14's per-OS Toolkit instructions (system Toolkit installs are a common source of version-mismatch bugs like this one).
+
+**Trade-off:** `onnxruntime-gpu` will eventually require re-pinning again once the CUDA 13 ecosystem matures (newer PyTorch/cuDNN builds, wider driver support) — the `<1.27` ceiling is a deliberate, temporary floor-and-ceiling pin, not a permanent one. `qrag[gpu]` installs are now larger (~600 MB, pip-installed CUDA/cuDNN runtime) than AD-14 assumed (which relied on a system Toolkit and only pulled the ~10 MB `onnxruntime-gpu` wheel itself).
+
+```mermaid
+flowchart TD
+    OLD["AD-14: onnxruntime-gpu>=1.19,<2.0\nresolves to 1.27.0 (latest)"]
+    OLD --> BUG["1.27.0 requires libcudart.so.13\nSystem has CUDA 12 → ImportError"]
+
+    NEW["AD-15: onnxruntime-gpu[cuda,cudnn]>=1.21,<1.27"]
+    NEW --> PIP["pip installs:\nnvidia-cuda-runtime-cu12\nnvidia-cudnn-cu12"]
+    PIP --> PRELOAD["_load(): ort.preload_dlls(cuda=True, cudnn=True)\nmakes onnxruntime find the pip-installed .so files"]
+    PRELOAD --> SESS["InferenceSession(providers=[CUDAExecutionProvider, ...])\nsucceeds — no system Toolkit needed"]
+
+    subgraph SYS["System-level requirement (all OSes)"]
+        DRIVER["NVIDIA driver only\n(kernel module — can't be pip-installed)"]
+    end
+```

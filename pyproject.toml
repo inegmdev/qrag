@@ -20,7 +20,7 @@ cpu = [
     "onnxruntime>=1.19,<2.0",
 ]
 gpu = [
-    "onnxruntime-gpu>=1.19,<2.0",
+    "onnxruntime-gpu[cuda,cudnn]>=1.21,<1.27",
 ]
 build = [
     "tree-sitter>=0.22",

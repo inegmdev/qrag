@@ -40,7 +40,7 @@
 | Rich doc metadata (name, revision, status, page, section hierarchy) | ✅ PR #17 |
 | Rich code metadata (parent block, call depth, chunk index within parent) | ✅ PR #17 |
 | PyPI publish | ❌ Not done |
-| GPU embedding / multicore chunking | ✅ ISSUE-008 / AD-14 |
+| GPU embedding / multicore chunking | ✅ ISSUE-008 / AD-14 / AD-15 |
 
 ---
 
@@ -109,7 +109,7 @@ Full authoritative list: [`docs/BACKLOG.md`](docs/BACKLOG.md).
 | ~~**GH#13, GH#18, GH#23, GH#26, GH#28, GH#29, GH#31, GH#32**~~ | ~~High~~ | Resolved |
 | ~~**GH#35**~~ | ~~High~~ | Resolved by GH#38 / PR #55 |
 | ~~**GH#38**~~ | ~~High~~ | Resolved in PR #55 — onnxruntime + tokenizers, ~30 MB |
-| ~~**ISSUE-008**~~ | ~~High~~ | Resolved — real CUDA detection + `[cpu]`/`[gpu]` extras (AD-14) |
+| ~~**ISSUE-008**~~ | ~~High~~ | Resolved — real CUDA detection + `[cpu]`/`[gpu]` extras (AD-14); pin corrected + pip-bundled CUDA/cuDNN runtime after real-machine testing (AD-15) |
 | **H0** | High | Build-source relationship metadata (cmake targets ↔ source files) |
 | **H1–H6, GH#27, GH#30** | High | See `docs/BACKLOG.md` |
 | **GH#49** | Feature | [EPIC] `qrag explore` — replaces `hub`; TUI + multi-remote (GH#41–48) |
@@ -148,7 +148,8 @@ Full authoritative list: [`docs/BACKLOG.md`](docs/BACKLOG.md).
 | GH#49 | — | Open — [EPIC] qrag explore |
 | GH#41–48 | — | Open — explore sub-issues (implement in order) |
 | #58 | `claude/gpu-enabling-docs-la8bet` | Merged — real GPU embedding (ISSUE-008/AD-14): fixed `resolve_device` CUDA detection, split `onnxruntime`/`onnxruntime-gpu` into `[cpu]`/`[gpu]` extras, documented Linux/Windows/WSL GPU prerequisites in README |
-| #59 | `claude/gpu-enabling-docs-la8bet` | Open — awaiting review — fixes `_ensure_build_deps()` stale `build-gpu` extra reference left over after PR #58's `[cpu]`/`[gpu]` split; found via a real `qrag[gpu]` install |
+| #59 | `claude/gpu-enabling-docs-la8bet` | Merged — fixes `_ensure_build_deps()` stale `build-gpu` extra reference left over after PR #58's `[cpu]`/`[gpu]` split; found via a real `qrag[gpu]` install |
+| #60 | `claude/gpu-enabling-docs-la8bet` | Open — awaiting review — AD-15: real-machine `qrag[gpu]` install hit `libcudart.so.13` — `onnxruntime-gpu`'s `<2.0` pin let the resolver pick 1.27.0, which needs CUDA 13 not 12. Retightened to `onnxruntime-gpu[cuda,cudnn]>=1.21,<1.27`, added `ort.preload_dlls()`, dropped system-wide CUDA Toolkit install steps from README (NVIDIA driver only now needed) |
 
 ---
 
@@ -166,6 +167,7 @@ Full authoritative list: [`docs/BACKLOG.md`](docs/BACKLOG.md).
 - **`uv tool install`** as primary install method; `[tool.uv.sources]` pins torch to CPU wheel (AD-11, superseded by AD-12)
 - **`onnxruntime` split into `[cpu]`/`[gpu]` extras** — no longer a base dependency; every install must pick one explicitly; `[full]` aliases `[build, gpu]` (AD-14)
 - **GPU detection is real** — `resolve_device()` checks `onnxruntime.get_available_providers()` for `CUDAExecutionProvider` instead of hardcoding CPU (AD-14)
+- **No system-wide CUDA Toolkit needed** — `[gpu]` pins `onnxruntime-gpu[cuda,cudnn]>=1.21,<1.27` (excludes 1.27.0, which needs CUDA 13 not 12) and calls `ort.preload_dlls()`; the CUDA/cuDNN runtime comes from pip packages, only the NVIDIA driver is a system-level requirement (AD-15)
 - **`qrag hub` → `qrag explore`** — hub is deprecated; explore replaces it with TUI + multi-remote support (AD-10)
 - **Multi-remote backends** planned: GitHub Releases (current), HuggingFace Hub, JFrog Artifactory, git+LFS
 - **Origin tracking** — downloaded DBs store `origin_remote` in `~/.qrag/<v>/config.json`
