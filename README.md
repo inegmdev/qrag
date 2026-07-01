@@ -295,6 +295,9 @@ A: `onnxruntime-gpu` isn't installed — reinstall with `qrag[build,gpu]`.
 **Q: `qrag build --device=cuda` fails with "Failed to initialize the CUDA execution provider" / `libcudart.so` not found**  
 A: `qrag[gpu]` installs the CUDA/cuDNN runtime as pip packages and pins `onnxruntime-gpu` to a version compatible with them (`>=1.21,<1.27`) — if you pinned a different `onnxruntime-gpu` version yourself, or have a system-wide CUDA install with a mismatched major version on your library path, that's the likely cause. Reinstall with `uv tool install --reinstall 'qrag[build,gpu]'` and make sure the NVIDIA driver is up to date.
 
+**Q: `qrag build --device=cuda` prints a warning like `[W:onnxruntime:Default, device_discovery.cc:283 GetGpuDevices] Failed to detect devices under "/sys/class/drm/card0": ... Failed to open file: ".../device/vendor"` — is the GPU actually being used?**  
+A: This warning is safe to ignore. It comes from onnxruntime's hardware-enumeration/logging pass, which walks `/sys/class/drm/*` to log device info — it's unrelated to whether `CUDAExecutionProvider` actually initializes via the NVIDIA driver/CUDA runtime. The sysfs PCI attributes it's looking for are commonly missing under WSL2 and other virtualized/containerized GPU passthrough setups even when the GPU is fully usable. Confirm the GPU is really in use by checking `nvidia-smi` for a utilization spike during the build, or watching for `[build] device=cuda` in the build's own startup line.
+
 ---
 
 ## For Developers
