@@ -288,6 +288,18 @@ class BuildLayout:
             if self._total_files > 0 and avg_chunks_per_file > 0
             else None
         )
+        # Progress.update() calls task._reset() whenever `total` actually changes,
+        # which wipes the rolling speed samples Rich needs for time_remaining.
+        # est_total is a rolling estimate that jitters on nearly every batch, so
+        # only push a new total when it drifts enough to matter — otherwise the
+        # ETA column would show "—" forever.
+        current_total = self._progress.tasks[self._embed_task].total
+        if (
+            est_total is not None
+            and current_total is not None
+            and abs(est_total - current_total) < 0.1 * current_total
+        ):
+            est_total = current_total
         self._progress.update(
             self._embed_task,
             completed=chunks_embedded,
