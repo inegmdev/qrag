@@ -171,6 +171,7 @@ Full authoritative list: [`docs/BACKLOG.md`](docs/BACKLOG.md).
 - **GPU detection is real** — `resolve_device()` checks `onnxruntime.get_available_providers()` for `CUDAExecutionProvider` instead of hardcoding CPU (AD-14)
 - **No system-wide CUDA Toolkit needed** — `[gpu]` pins `onnxruntime-gpu[cuda,cudnn]>=1.21,<1.27` (excludes 1.27.0, which needs CUDA 13 not 12) and calls `ort.preload_dlls()`; the CUDA/cuDNN runtime comes from pip packages, only the NVIDIA driver is a system-level requirement (AD-15)
 - **`qrag hub` → `qrag explore`** — hub is deprecated; explore replaces it with TUI + multi-remote support (AD-10)
+- **Session-scoped DB selection** (AD-17) — new `list_databases`/`set_active_databases`/`reset_active_databases` MCP tools let the LLM narrow the *globally active* DB set to a per-conversation subset, in-memory/per-process (stdio = 1 process per session, no session-ID needed); checklist UI rendered by the agent host, not the MCP server; fallback suggestions expose `excluded_active_dbs` but do no server-side relevance matching — LLM reasons over it
 - **Multi-remote backends** planned: GitHub Releases (current), HuggingFace Hub, JFrog Artifactory, git+LFS
 - **Origin tracking** — downloaded DBs store `origin_remote` in `~/.qrag/<v>/config.json`
 - **Keyword tags** — docs: top words from section titles; code: camelCase/snake_case token split from symbol names
