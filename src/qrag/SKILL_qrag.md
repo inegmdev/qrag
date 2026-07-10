@@ -5,6 +5,31 @@ description: Search the local RAG database to answer questions about code or doc
 
 Search the local RAG database iteratively to answer a question about code or documentation.
 
+## Database scoping (do this first)
+
+Multiple databases can be globally active at once (`qrag ai active`), but searching all of
+them on every query floods you with irrelevant results and increases the chance of a wrong
+answer. Narrow the scope for this conversation before searching:
+
+1. **At the start of a conversation**, or **whenever the user asks to change what's searched**
+   (e.g. "just look in the RTOS docs", "search everything again"): call `list_databases` to see
+   the globally active set, present it to the user as an interactive multi-select checklist
+   (arrow keys + spacebar, one item per database), and call `set_active_databases` with their
+   selection. If the user wants everything again, call `reset_active_databases` instead of
+   re-selecting every item.
+2. If a database has only one entry globally active, skip the checklist — there's nothing to
+   narrow.
+3. If any tool response includes a `scope_hint` field, it means this session hasn't been scoped
+   yet — treat it as a one-time nudge to run step 1, then proceed with the user's query using the
+   full result already returned (don't discard it or re-run the search).
+4. If a tool response includes an `excluded_active_dbs` field, those are databases the user has
+   approved globally but excluded from this session's scope. If the results seem thin or
+   off-target, look at those names/tags yourself and judge whether one might hold the answer —
+   if so, tell the user and offer to activate it (via `set_active_databases`). Do not silently
+   search them yourself; only the user's selection changes what gets searched.
+5. **Keep the user informed**: briefly mention when you scope, re-scope, or reset the session's
+   active databases, so background changes to search scope are never silent.
+
 ## Workflow
 
 Given: $ARGUMENTS (your question or topic)
@@ -35,3 +60,6 @@ Given: $ARGUMENTS (your question or topic)
 - `search_docs(query)` — semantic search over indexed documentation (returns top 10)
 - `list_symbols(pattern)` — list code symbols matching a glob pattern
 - `get_symbol(name)` — retrieve full source of a specific symbol
+- `list_databases()` — list globally active databases available to scope this session to
+- `set_active_databases(versions)` — narrow this session's search to the given subset (session-only, does not change global config)
+- `reset_active_databases()` — clear session narrowing, revert to the full globally active set

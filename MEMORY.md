@@ -37,6 +37,7 @@
 | Rich TUI with progress bars + ETA | ✅ PR #20 |
 | Post-build audit report file | ✅ PR #20 |
 | Multi-database search (fan-out across N active DBs) | ✅ PR #16 |
+| Session-scoped database narrowing (`list_databases`/`set_active_databases`/`reset_active_databases`) | ✅ AD-17 |
 | Rich doc metadata (name, revision, status, page, section hierarchy) | ✅ PR #17 |
 | Rich code metadata (parent block, call depth, chunk index within parent) | ✅ PR #17 |
 | PyPI publish | ❌ Not done |
@@ -152,6 +153,7 @@ Full authoritative list: [`docs/BACKLOG.md`](docs/BACKLOG.md).
 | #60 | `claude/gpu-enabling-docs-la8bet` | Merged — AD-15: real-machine `qrag[gpu]` install hit `libcudart.so.13` — `onnxruntime-gpu`'s `<2.0` pin let the resolver pick 1.27.0, which needs CUDA 13 not 12. Retightened to `onnxruntime-gpu[cuda,cudnn]>=1.21,<1.27`, added `ort.preload_dlls()`, dropped system-wide CUDA Toolkit install steps from README (NVIDIA driver only now needed) |
 | #62 | `claude/gpu-enabling-docs-la8bet` | Open — awaiting review — docs-only: clarifies the `device_discovery.cc GetGpuDevices` sysfs warning is benign (confirmed on real GPU hardware, utilization spiked during build despite the warning) |
 | #61 | `claude/eta-embedding-display-scno5x` | Open — fix M8: embed row ETA stuck on `—` in `qrag build` TUI; `on_embed_batch()` was resetting Rich's speed samples every batch by pushing a jittery `total`. See AD-16. |
+| — | `claude/database-deactivation-llm-load-iggb26` | Open — AD-17: session-scoped database selection (`list_databases`/`set_active_databases`/`reset_active_databases` MCP tools + `SKILL_qrag.md` checklist workflow) |
 
 ---
 
