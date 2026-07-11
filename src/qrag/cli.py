@@ -2080,20 +2080,53 @@ def explore_delete(version: str, remote: str | None, yes: bool):
     click.echo(f"✓ Deleted '{version}'" + (" and deactivated it." if was_active else "."))
 
 
+def _push_all_remotes(version: str, dry_run: bool, force: bool) -> None:
+    """Push VERSION to every configured remote, continue-on-failure."""
+    from . import explore as _explore
+    from .config import get_remotes
+
+    if not get_remotes():
+        click.echo("Error: no remotes configured. Add one with 'qrag explore add-remote'.", err=True)
+        sys.exit(1)
+
+    outcomes = _explore.push_all_remotes(version, force=force, dry_run=dry_run)
+    icons = {"ok": "✓", "skipped": "·", "failed": "✗", "dry-run": "?"}
+    click.echo(f"Push '{version}' → all remotes:")
+    failed = []
+    for o in outcomes:
+        line = f"  {icons.get(o.status, '?')} {o.remote}: {o.status}"
+        if o.detail:
+            line += f" — {o.detail}"
+        click.echo(line)
+        if o.status == "failed":
+            failed.append(o.remote)
+
+    if failed:
+        click.echo("\nRe-run the failed remotes individually:")
+        for remote in failed:
+            click.echo(f"  qrag explore push {version} --remote {remote}")
+        sys.exit(1)
+
+
 @explore.command("push")
 @click.argument("version")
 @click.option("--remote", "-r", default=None,
               help="Target remote (default: the version's origin, else the default remote).")
+@click.option("--all-remotes", is_flag=True, help="Push to every configured remote, continue-on-failure.")
 @click.option("--dry-run", is_flag=True, help="Show what would be pushed without uploading.")
 @click.option("--force", is_flag=True, help="Overwrite an existing remote release.")
-def explore_push(version: str, remote: str | None, dry_run: bool, force: bool):
-    """Publish a local VERSION to a remote."""
+def explore_push(version: str, remote: str | None, all_remotes: bool, dry_run: bool, force: bool):
+    """Publish a local VERSION to a remote (or every remote with --all-remotes)."""
     from . import explore as _explore
     from .explore import human_size
 
     if version not in _explore.local_version_names():
         click.echo(f"Error: version '{version}' not found in ~/.qrag.", err=True)
         sys.exit(1)
+
+    if all_remotes:
+        _push_all_remotes(version, dry_run, force)
+        return
 
     try:
         backend = _explore.resolve_push_backend(version, remote)
