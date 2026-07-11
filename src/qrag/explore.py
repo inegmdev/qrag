@@ -725,6 +725,31 @@ def set_origin_remote(version: str, remote_name: str) -> None:
     cfg_path.parent.mkdir(parents=True, exist_ok=True)
     cfg_path.write_text(json.dumps(data, indent=2))
 
+
+def get_origin_remote(version: str) -> str | None:
+    """Return the remote a local version was downloaded from / assigned to."""
+    cfg_path = CACHE_DIR / version / "config.json"
+    if cfg_path.exists():
+        try:
+            return json.loads(cfg_path.read_text()).get("origin_remote")
+        except (json.JSONDecodeError, OSError):
+            return None
+    return None
+
+
+def resolve_push_backend(version: str, remote: str | None = None) -> RemoteBackend:
+    """Backend to push VERSION to: explicit remote → its origin → the default.
+
+    Raises RemoteError if unresolvable or if the backend is read-only.
+    """
+    name = remote or get_origin_remote(version)
+    backend = get_backend(name)
+    if not backend.can_push:
+        raise RemoteError(
+            f"Remote '{backend.name}' is read-only and cannot be pushed to."
+        )
+    return backend
+
 def resolve_remote(name: str | None = None) -> tuple[str, dict]:
     """Resolve a remote to (name, {type, url}).
 

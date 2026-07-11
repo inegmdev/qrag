@@ -1935,13 +1935,55 @@ def explore_download(version: str, remote: str | None):
     click.echo(f"✓ Downloaded '{version}' from '{backend.name}'. Added to active versions.")
 
 
+def _remote_delete(version: str, remote: str, yes: bool) -> None:
+    """Protected remote wipe: removes a published version for the whole team."""
+    from . import explore as _explore
+
+    try:
+        backend = _explore.get_backend(remote or None)
+    except _explore.RemoteError as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+
+    click.echo(
+        f"⚠  About to DELETE published version '{version}' from remote "
+        f"'{backend.name}' ({backend.type})."
+    )
+    click.echo("   This removes it for the whole team and cannot be undone.")
+
+    if not yes:
+        if not sys.stdin.isatty():
+            click.echo("Error: remote delete requires --yes in non-interactive mode.", err=True)
+            sys.exit(1)
+        typed = click.prompt(f"Type the version name '{version}' to confirm",
+                             default="", show_default=False)
+        if typed != version:
+            click.echo("Name did not match. Aborted.")
+            return
+
+    try:
+        backend.check_auth()
+        with _spinner(f"Deleting '{version}' from '{backend.name}'…"):
+            backend.delete_remote(version)
+    except _explore.RemoteError as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+    click.echo(f"✓ Deleted '{version}' from remote '{backend.name}'.")
+
+
 @explore.command("delete")
 @click.argument("version")
+@click.option("--remote", "-r", default=None,
+              help="Delete the PUBLISHED version from this remote instead of the local cache.")
 @click.option("--yes", "-y", is_flag=True, help="Delete without confirmation.")
-def explore_delete(version: str, yes: bool):
-    """Delete a local database VERSION from the cache (and deactivate it)."""
+def explore_delete(version: str, remote: str | None, yes: bool):
+    """Delete VERSION from the local cache, or (--remote) from a remote."""
     from . import explore as _explore
     from .explore import human_age, human_size
+
+    if remote is not None:
+        _remote_delete(version, remote, yes)
+        return
 
     if version not in _explore.local_version_names():
         click.echo(f"Error: version '{version}' not found in ~/.qrag.", err=True)
@@ -1967,6 +2009,49 @@ def explore_delete(version: str, yes: bool):
 
     was_active = _explore.delete_local(version)
     click.echo(f"✓ Deleted '{version}'" + (" and deactivated it." if was_active else "."))
+
+
+@explore.command("push")
+@click.argument("version")
+@click.option("--remote", "-r", default=None,
+              help="Target remote (default: the version's origin, else the default remote).")
+@click.option("--dry-run", is_flag=True, help="Show what would be pushed without uploading.")
+@click.option("--force", is_flag=True, help="Overwrite an existing remote release.")
+def explore_push(version: str, remote: str | None, dry_run: bool, force: bool):
+    """Publish a local VERSION to a remote."""
+    from . import explore as _explore
+    from .explore import human_size
+
+    if version not in _explore.local_version_names():
+        click.echo(f"Error: version '{version}' not found in ~/.qrag.", err=True)
+        sys.exit(1)
+
+    try:
+        backend = _explore.resolve_push_backend(version, remote)
+    except _explore.RemoteError as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+
+    version_dir = CACHE_DIR / version
+    files = [f for f in ("code.db", "docs.db", "config.json", "build-report.txt", "manifest.json")
+             if (version_dir / f).exists()]
+    click.echo(f"Push '{version}' → remote '{backend.name}' ({backend.type})")
+    for fname in files:
+        click.echo(f"  {fname}  ({human_size((version_dir / fname).stat().st_size)})")
+
+    if dry_run:
+        click.echo("(dry run — nothing uploaded)")
+        return
+
+    try:
+        backend.check_auth()
+    except _explore.RemoteError as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+
+    with _spinner(f"Pushing '{version}' to '{backend.name}'…"):
+        backend.push(version, version_dir, force=force)
+    click.echo(f"✓ Pushed '{version}' to '{backend.name}'.")
 
 
 @explore.command("add-remote")

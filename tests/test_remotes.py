@@ -329,3 +329,66 @@ def test_set_origin_remote(tmp_path, monkeypatch):
     assert data["origin_remote"] == "hf"
     assert data["origin_version"] == "v1"   # preserved
     assert data["embedding_model"] == "m"   # preserved
+
+
+# ---------------------------------------------------------------------------
+# push resolution (#45)
+# ---------------------------------------------------------------------------
+
+@explore.register_backend("readonly-test")
+class _ReadOnlyBackend(explore.RemoteBackend):
+    can_push = False
+
+    def check_auth(self):
+        ...
+
+    def list_versions(self):
+        return []
+
+    def download(self, version, dest_dir):
+        ...
+
+    def push(self, version, src_dir, *, force=False):
+        ...
+
+    def delete_remote(self, version):
+        ...
+
+
+def test_get_origin_remote(tmp_path, monkeypatch):
+    monkeypatch.setattr(explore, "CACHE_DIR", tmp_path)
+    (tmp_path / "v1").mkdir()
+    (tmp_path / "v1" / "config.json").write_text('{"origin_remote": "hf"}')
+    (tmp_path / "v2").mkdir()
+    (tmp_path / "v2" / "config.json").write_text("{}")
+    assert explore.get_origin_remote("v1") == "hf"
+    assert explore.get_origin_remote("v2") is None
+    assert explore.get_origin_remote("ghost") is None
+
+
+def test_resolve_push_backend_explicit(monkeypatch):
+    monkeypatch.setattr(config, "get_remote", lambda n: {"type": "github", "url": "u"})
+    backend = explore.resolve_push_backend("v1", "origin")
+    assert isinstance(backend, explore.GitHubBackend) and backend.name == "origin"
+
+
+def test_resolve_push_backend_uses_origin(tmp_path, monkeypatch):
+    monkeypatch.setattr(explore, "CACHE_DIR", tmp_path)
+    (tmp_path / "v1").mkdir()
+    (tmp_path / "v1" / "config.json").write_text('{"origin_remote": "gh2"}')
+    seen = {}
+
+    def fake_get_remote(name):
+        seen["name"] = name
+        return {"type": "github", "url": "u"}
+
+    monkeypatch.setattr(config, "get_remote", fake_get_remote)
+    backend = explore.resolve_push_backend("v1", None)
+    assert seen["name"] == "gh2"
+    assert backend.name == "gh2"
+
+
+def test_resolve_push_backend_readonly(monkeypatch):
+    monkeypatch.setattr(config, "get_remote", lambda n: {"type": "readonly-test", "url": "u"})
+    with pytest.raises(explore.RemoteError, match="read-only"):
+        explore.resolve_push_backend("v1", "mirror")
