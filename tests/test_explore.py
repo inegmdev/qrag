@@ -159,6 +159,104 @@ class TestRemoveActiveVersion:
         assert config.remove_active_version("v1") is False
 
 
+def _diff_code_db(path, manifest, symbols, chunks):
+    conn = sqlite3.connect(path)
+    conn.executescript(
+        """
+        CREATE TABLE code_chunks(id INTEGER PRIMARY KEY, symbol_name TEXT, file_path TEXT,
+            type TEXT, language TEXT, parent_name TEXT);
+        CREATE TABLE symbols(id INTEGER PRIMARY KEY, name TEXT UNIQUE, type TEXT, file_path TEXT);
+        CREATE TABLE file_manifest(rel_path TEXT, input_root TEXT, mtime REAL, sha256 TEXT,
+            PRIMARY KEY(rel_path, input_root));
+        """
+    )
+    for root, rel, sha in manifest:
+        conn.execute("INSERT INTO file_manifest(rel_path,input_root,mtime,sha256) VALUES(?,?,0,?)", (rel, root, sha))
+    for name, typ, fp in symbols:
+        conn.execute("INSERT INTO symbols(name,type,file_path) VALUES(?,?,?)", (name, typ, fp))
+    for sym, parent, lang in chunks:
+        conn.execute("INSERT INTO code_chunks(symbol_name,parent_name,language,type) VALUES(?,?,?,'function')",
+                     (sym, parent, lang))
+    conn.commit()
+    conn.close()
+
+
+def _diff_docs_db(path, manifest):
+    conn = sqlite3.connect(path)
+    conn.executescript(
+        "CREATE TABLE doc_sections(id INTEGER PRIMARY KEY, source_path TEXT, word_count INT);"
+        "CREATE TABLE file_manifest(rel_path TEXT, input_root TEXT, mtime REAL, sha256 TEXT,"
+        " PRIMARY KEY(rel_path, input_root));"
+    )
+    for root, rel, sha in manifest:
+        conn.execute("INSERT INTO file_manifest(rel_path,input_root,mtime,sha256) VALUES(?,?,0,?)", (rel, root, sha))
+    conn.commit()
+    conn.close()
+
+
+@pytest.fixture
+def diff_cache(tmp_path, monkeypatch):
+    monkeypatch.setattr(explore, "CACHE_DIR", tmp_path)
+    monkeypatch.setattr(explore, "load_global", lambda: {"active_versions": []})
+
+    v1 = tmp_path / "v1"
+    v1.mkdir()
+    _diff_code_db(
+        v1 / "code.db",
+        manifest=[("/src", "a.c", "h1"), ("/src", "b.c", "h2"), ("/src", "old.c", "h3")],
+        symbols=[("foo", "function", "a.c"), ("bar", "function", "b.c"), ("Old", "struct", "old.c")],
+        chunks=[("foo", "", "c"), ("bar", "", "c"), ("Old", "", "c")],
+    )
+    _diff_docs_db(v1 / "docs.db", [("/d", "x.pdf", "d1"), ("/d", "y.pdf", "d2")])
+
+    v2 = tmp_path / "v2"
+    v2.mkdir()
+    _diff_code_db(
+        v2 / "code.db",
+        manifest=[("/src", "a.c", "h1"), ("/src", "b.c", "hX"), ("/src", "new.c", "h4")],
+        symbols=[("foo", "function", "a.c"), ("bar", "function", "b.c"), ("baz", "function", "new.c")],
+        chunks=[("foo", "", "c"), ("bar", "", "c"), ("baz", "foo", "cpp")],
+    )
+    _diff_docs_db(v2 / "docs.db", [("/d", "x.pdf", "d1"), ("/d", "z.pdf", "d3")])
+    return tmp_path
+
+
+class TestComputeDiff:
+    def test_code_file_delta(self, diff_cache):
+        d = explore.compute_diff("v1", "v2")
+        assert d.code_files.added == ["new.c"]
+        assert d.code_files.removed == ["old.c"]
+        assert d.code_files.changed == ["b.c"]  # sha256 differs
+
+    def test_doc_file_delta(self, diff_cache):
+        d = explore.compute_diff("v1", "v2")
+        assert d.doc_files.added == ["z.pdf"]
+        assert d.doc_files.removed == ["y.pdf"]
+        assert d.doc_files.changed == []
+
+    def test_symbol_delta(self, diff_cache):
+        d = explore.compute_diff("v1", "v2")
+        assert [s.name for s in d.symbols_added] == ["baz"]
+        assert [s.name for s in d.symbols_removed] == ["Old"]
+        assert d.symbols_added[0].parent_name == "foo"  # from code_chunks
+
+    def test_language_shift(self, diff_cache):
+        d = explore.compute_diff("v1", "v2")
+        shift = {lang: (a, b) for lang, a, b in d.lang_shift}
+        assert "cpp" in shift  # cpp appears only in v2
+        assert shift["cpp"][0] == 0.0 and shift["cpp"][1] > 0.0
+
+    def test_to_dict(self, diff_cache):
+        d = explore.compute_diff("v1", "v2").to_dict()
+        assert d["v1"] == "v1" and d["v2"] == "v2"
+        assert d["code_files"]["added"] == ["new.c"]
+        assert d["symbols_removed"][0]["name"] == "Old"
+
+    def test_unknown_version_raises(self, diff_cache):
+        with pytest.raises(FileNotFoundError):
+            explore.compute_diff("v1", "ghost")
+
+
 class TestFormatting:
     def test_lang_percentages(self):
         langs = [explore.LangCount("c", 2), explore.LangCount("cpp", 1)]

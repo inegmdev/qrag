@@ -750,6 +750,147 @@ def resolve_push_backend(version: str, remote: str | None = None) -> RemoteBacke
         )
     return backend
 
+
+# ===========================================================================
+# Diff between two versions (#47)
+# ===========================================================================
+
+@dataclass
+class FileDelta:
+    added: list[str] = field(default_factory=list)
+    removed: list[str] = field(default_factory=list)
+    changed: list[str] = field(default_factory=list)
+
+    @property
+    def is_empty(self) -> bool:
+        return not (self.added or self.removed or self.changed)
+
+
+@dataclass
+class SymbolChange:
+    name: str
+    type: str
+    file_path: str
+    parent_name: str
+    change: str  # "added" | "removed"
+
+
+@dataclass
+class DiffResult:
+    v1: str
+    v2: str
+    code_files: FileDelta
+    doc_files: FileDelta
+    symbols_added: list[SymbolChange]
+    symbols_removed: list[SymbolChange]
+    lang_shift: list[tuple[str, float, float]]  # (language, pct_v1, pct_v2)
+
+    def to_dict(self) -> dict:
+        def _fd(d: FileDelta) -> dict:
+            return {"added": d.added, "removed": d.removed, "changed": d.changed}
+
+        def _sc(s: SymbolChange) -> dict:
+            return {"name": s.name, "type": s.type, "file": s.file_path,
+                    "parent": s.parent_name}
+
+        return {
+            "v1": self.v1,
+            "v2": self.v2,
+            "code_files": _fd(self.code_files),
+            "doc_files": _fd(self.doc_files),
+            "symbols_added": [_sc(s) for s in self.symbols_added],
+            "symbols_removed": [_sc(s) for s in self.symbols_removed],
+            "language_shift": [
+                {"language": lang, "v1": p1, "v2": p2}
+                for lang, p1, p2 in self.lang_shift
+            ],
+        }
+
+
+def _read_manifest(db_path: Path) -> dict[tuple[str, str], str]:
+    """{(input_root, rel_path): sha256} from a DB's file_manifest."""
+    conn = _connect_ro(db_path)
+    if conn is None:
+        return {}
+    try:
+        return {
+            (r["input_root"], r["rel_path"]): r["sha256"]
+            for r in _rows(conn, "SELECT input_root, rel_path, sha256 FROM file_manifest")
+        }
+    finally:
+        conn.close()
+
+
+def _file_delta(m1: dict, m2: dict) -> FileDelta:
+    k1, k2 = set(m1), set(m2)
+    added = sorted(rel for (_root, rel) in (k2 - k1))
+    removed = sorted(rel for (_root, rel) in (k1 - k2))
+    changed = sorted(rel for key in (k1 & k2) if m1[key] != m2[key] for (_root, rel) in [key])
+    return FileDelta(added, removed, changed)
+
+
+def _read_symbols(code_db: Path) -> dict[str, tuple[str, str]]:
+    """{symbol_name: (type, file_path)} from the canonical symbols table."""
+    conn = _connect_ro(code_db)
+    if conn is None:
+        return {}
+    try:
+        return {
+            r["name"]: (r["type"] or "", r["file_path"] or "")
+            for r in _rows(conn, "SELECT name, type, file_path FROM symbols")
+        }
+    finally:
+        conn.close()
+
+
+def _read_parents(code_db: Path) -> dict[str, str]:
+    """{symbol_name: parent_name} from code_chunks (parent lives there, not symbols)."""
+    conn = _connect_ro(code_db)
+    if conn is None:
+        return {}
+    try:
+        return {
+            r["symbol_name"]: r["parent_name"]
+            for r in _rows(
+                conn,
+                "SELECT symbol_name, parent_name FROM code_chunks "
+                "WHERE parent_name IS NOT NULL AND parent_name != ''",
+            )
+        }
+    finally:
+        conn.close()
+
+
+def compute_diff(v1: str, v2: str) -> DiffResult:
+    """Structured diff between two local versions. Raises FileNotFoundError."""
+    d1, d2 = CACHE_DIR / v1, CACHE_DIR / v2
+    for name, d in ((v1, d1), (v2, d2)):
+        if not _is_version_dir(d):
+            raise FileNotFoundError(name)
+
+    code_files = _file_delta(_read_manifest(d1 / "code.db"), _read_manifest(d2 / "code.db"))
+    doc_files = _file_delta(_read_manifest(d1 / "docs.db"), _read_manifest(d2 / "docs.db"))
+
+    s1, s2 = _read_symbols(d1 / "code.db"), _read_symbols(d2 / "code.db")
+    p1, p2 = _read_parents(d1 / "code.db"), _read_parents(d2 / "code.db")
+    symbols_added = [
+        SymbolChange(n, s2[n][0], s2[n][1], p2.get(n, ""), "added")
+        for n in sorted(set(s2) - set(s1))
+    ]
+    symbols_removed = [
+        SymbolChange(n, s1[n][0], s1[n][1], p1.get(n, ""), "removed")
+        for n in sorted(set(s1) - set(s2))
+    ]
+
+    lang1 = dict(lang_percentages(_code_summary(d1 / "code.db")["languages"]))
+    lang2 = dict(lang_percentages(_code_summary(d2 / "code.db")["languages"]))
+    lang_shift = [
+        (lang, round(lang1.get(lang, 0.0), 1), round(lang2.get(lang, 0.0), 1))
+        for lang in sorted(set(lang1) | set(lang2))
+    ]
+
+    return DiffResult(v1, v2, code_files, doc_files, symbols_added, symbols_removed, lang_shift)
+
 def resolve_remote(name: str | None = None) -> tuple[str, dict]:
     """Resolve a remote to (name, {type, url}).
 

@@ -640,3 +640,155 @@ def _browser_action(key: str, version: str, console: Console) -> str:
     except Exception as e:  # keep the browser alive on any action failure
         return f"[red]error[/red] {e}"
     return ""
+
+
+# ===========================================================================
+# Diff tree builders + interactive diff viewer (#47)
+# ===========================================================================
+
+def _paths_to_nodes(marked: list[tuple[str, str]]) -> list[TreeNode]:
+    """Turn (path, marker) pairs into a nested folder tree of TreeNodes."""
+    tree: dict = {}
+    for path, marker in marked:
+        parts = [p for p in path.split("/") if p] or [path]
+        cursor = tree
+        for part in parts[:-1]:
+            cursor = cursor.setdefault(part, {})
+        cursor.setdefault("__files__", []).append((parts[-1], marker))
+
+    def build(node: dict, prefix: str) -> list[TreeNode]:
+        out: list[TreeNode] = []
+        for name in sorted(k for k in node if k != "__files__"):
+            branch = TreeNode(label=f"{name}/", key=f"{prefix}{name}/")
+            branch.children = build(node[name], f"{prefix}{name}/")
+            out.append(branch)
+        for fname, marker in sorted(node.get("__files__", [])):
+            out.append(TreeNode(label=f"{marker} {fname}", key=f"{prefix}{fname}", data=marker))
+        return out
+
+    return build(tree, "")
+
+
+def build_file_tree(delta) -> list[TreeNode]:
+    """Folder tree of a FileDelta (added +, removed -, changed ~)."""
+    marked = (
+        [(p, "+") for p in delta.added]
+        + [(p, "-") for p in delta.removed]
+        + [(p, "~") for p in delta.changed]
+    )
+    if not marked:
+        return [TreeNode(label="(no changes)", key="none")]
+    return _paths_to_nodes(marked)
+
+
+def build_symbol_ast_tree(added, removed) -> list[TreeNode]:
+    """Parent/child symbol tree of the changed symbols (via parent_name)."""
+    changes = list(added) + list(removed)
+    if not changes:
+        return [TreeNode(label="(no symbol changes)", key="none")]
+    by_name: dict[str, TreeNode] = {}
+    for c in changes:
+        marker = "+" if c.change == "added" else "-"
+        by_name[c.name] = TreeNode(label=f"{marker} {c.name} ({c.type})", key=f"sym:{c.name}", data=c)
+    roots: list[TreeNode] = []
+    for c in changes:
+        node = by_name[c.name]
+        parent = by_name.get(c.parent_name) if (c.parent_name and c.parent_name != c.name) else None
+        if parent is not None:
+            parent.children.append(node)
+        else:
+            roots.append(node)
+    return sorted(roots, key=lambda n: n.label)
+
+
+def _diff_summary(diff) -> str:
+    cf, df = diff.code_files, diff.doc_files
+    return (
+        f"{diff.v1} → {diff.v2}   "
+        f"code files +{len(cf.added)} -{len(cf.removed)} ~{len(cf.changed)}   "
+        f"docs +{len(df.added)} -{len(df.removed)} ~{len(df.changed)}   "
+        f"symbols +{len(diff.symbols_added)} -{len(diff.symbols_removed)}"
+    )
+
+
+_DIFF_KEYS = "j/k move · space expand · c code · d docs · 1 ast · 2 files · / filter · q quit"
+
+
+def run_diff_viewer(diff) -> bool:
+    """Interactive diff browser. Returns False if readchar is unavailable."""
+    try:
+        import readchar
+    except ImportError:
+        return False
+
+    code_file_roots = build_file_tree(diff.code_files)
+    code_ast_roots = build_symbol_ast_tree(diff.symbols_added, diff.symbols_removed)
+    docs_roots = build_file_tree(diff.doc_files)
+
+    state = {"section": "code", "code_view": "file"}
+
+    def roots() -> list[TreeNode]:
+        if state["section"] == "docs":
+            return docs_roots
+        return code_ast_roots if state["code_view"] == "ast" else code_file_roots
+
+    console = Console()
+    tree = TreeView(roots())
+
+    def title() -> str:
+        section = "DOCS" if state["section"] == "docs" else f"CODE ({state['code_view']})"
+        return f"diff · {section}"
+
+    while True:
+        console.clear()
+        console.print(Text(_diff_summary(diff), style="bold"))
+        console.print(Panel(tree.render(), title=title(), title_align="left", expand=True))
+        console.print(Text(_DIFF_KEYS, style="dim"))
+        try:
+            key = readchar.readkey()
+        except KeyboardInterrupt:
+            break
+
+        if key in ("q", readchar.key.ESC):
+            break
+        elif key in ("j", readchar.key.DOWN):
+            tree.move(1)
+        elif key in ("k", readchar.key.UP):
+            tree.move(-1)
+        elif key == " ":
+            tree.toggle()
+        elif key in (readchar.key.ENTER, "\r", "\n"):
+            tree.expand_current()
+        elif key == "c":
+            state["section"] = "code"
+            tree = TreeView(roots())
+        elif key == "d":
+            state["section"] = "docs"
+            tree = TreeView(roots())
+        elif key == "1":
+            state["section"], state["code_view"] = "code", "ast"
+            tree = TreeView(roots())
+        elif key == "2":
+            state["section"], state["code_view"] = "code", "file"
+            tree = TreeView(roots())
+        elif key == "/":
+            buf = ""
+            while True:
+                tree.set_filter(buf)
+                console.clear()
+                console.print(Panel(tree.render(), title=title(), title_align="left", expand=True))
+                console.print(Text(f"/{buf}", style="yellow"))
+                console.print(Text("type to filter · Enter apply · Esc clear", style="dim"))
+                k = readchar.readkey()
+                if k in (readchar.key.ENTER, "\r", "\n"):
+                    break
+                if k == readchar.key.ESC:
+                    tree.set_filter("")
+                    break
+                if k in (readchar.key.BACKSPACE, "\x7f", "\b"):
+                    buf = buf[:-1]
+                elif k.isprintable() and len(k) == 1:
+                    buf += k
+
+    console.clear()
+    return True
