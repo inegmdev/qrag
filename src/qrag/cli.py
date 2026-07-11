@@ -1926,6 +1926,60 @@ def explore_stats(version: str):
     _render_stats(_explore.compute_stats(version))
 
 
+def _render_diff_verbose(diff) -> None:
+    """Flat, CI-friendly diff output."""
+    def _files(label, fd):
+        click.echo(f"{label}:  +{len(fd.added)}  -{len(fd.removed)}  ~{len(fd.changed)}")
+        for p in fd.added:
+            click.echo(f"  + {p}")
+        for p in fd.removed:
+            click.echo(f"  - {p}")
+        for p in fd.changed:
+            click.echo(f"  ~ {p}")
+
+    click.echo(f"diff {diff.v1} → {diff.v2}")
+    _files("Code files", diff.code_files)
+    _files("Doc files", diff.doc_files)
+    click.echo(f"Symbols:  +{len(diff.symbols_added)}  -{len(diff.symbols_removed)}")
+    for s in diff.symbols_added:
+        click.echo(f"  + {s.name} ({s.type})")
+    for s in diff.symbols_removed:
+        click.echo(f"  - {s.name} ({s.type})")
+    shifts = [(l, a, b) for l, a, b in diff.lang_shift if a != b]
+    if shifts:
+        click.echo("Language shift:")
+        for lang, a, b in shifts:
+            click.echo(f"  {lang}  {a:.0f}% → {b:.0f}%")
+
+
+@explore.command("diff")
+@click.argument("v1")
+@click.argument("v2")
+@click.option("--json", "as_json", is_flag=True, help="Emit the diff as JSON (for CI).")
+@click.option("--verbose", is_flag=True, help="Print flat text instead of the interactive viewer.")
+def explore_diff(v1: str, v2: str, as_json: bool, verbose: bool):
+    """Compare two local versions V1 and V2."""
+    from . import explore as _explore
+
+    for v in (v1, v2):
+        if v not in _explore.local_version_names():
+            click.echo(f"Error: version '{v}' not found in ~/.qrag.", err=True)
+            sys.exit(1)
+
+    diff = _explore.compute_diff(v1, v2)
+
+    if as_json:
+        click.echo(json.dumps(diff.to_dict(), indent=2))
+        return
+
+    if not verbose and sys.stdin.isatty() and sys.stdout.isatty():
+        from .tui import run_diff_viewer
+        if run_diff_viewer(diff):
+            return
+
+    _render_diff_verbose(diff)
+
+
 @explore.command("download")
 @click.argument("version")
 @click.option("--remote", "-r", default=None,

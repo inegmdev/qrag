@@ -3,7 +3,15 @@
 The interactive browser loop needs a real TTY and readchar, so only the
 navigation/selection/filter model is unit-tested here.
 """
-from qrag.tui import TreeNode, TreeView, fuzzy_match
+from types import SimpleNamespace
+
+from qrag.tui import (
+    TreeNode,
+    TreeView,
+    build_file_tree,
+    build_symbol_ast_tree,
+    fuzzy_match,
+)
 
 
 def _sample() -> list[TreeNode]:
@@ -107,6 +115,39 @@ class TestRender:
     def test_render_nonempty(self):
         tv = TreeView(_sample())
         assert tv.render() is not None
+
+
+class TestDiffTreeBuilders:
+    def test_build_file_tree_folders(self):
+        delta = SimpleNamespace(
+            added=["drivers/gpio.c"], removed=["legacy/old.c"], changed=["drivers/uart.c"])
+        roots = build_file_tree(delta)
+        branches = {n.label: n for n in roots}
+        assert "drivers/" in branches and "legacy/" in branches
+        drivers_files = {c.label for c in branches["drivers/"].children}
+        assert drivers_files == {"+ gpio.c", "~ uart.c"}
+        assert {c.label for c in branches["legacy/"].children} == {"- old.c"}
+
+    def test_build_file_tree_empty(self):
+        delta = SimpleNamespace(added=[], removed=[], changed=[])
+        roots = build_file_tree(delta)
+        assert len(roots) == 1 and "no changes" in roots[0].label
+
+    def test_build_symbol_ast_tree_nesting(self):
+        def sc(name, parent, change):
+            return SimpleNamespace(name=name, type="function", file_path="f.c",
+                                   parent_name=parent, change=change)
+
+        added = [sc("child", "parent", "added"), sc("parent", "", "added")]
+        roots = build_symbol_ast_tree(added, [])
+        assert len(roots) == 1
+        parent = roots[0]
+        assert parent.label == "+ parent (function)"
+        assert [c.label for c in parent.children] == ["+ child (function)"]
+
+    def test_build_symbol_ast_tree_empty(self):
+        roots = build_symbol_ast_tree([], [])
+        assert len(roots) == 1 and "no symbol changes" in roots[0].label
 
 
 class TestBrowserAction:
