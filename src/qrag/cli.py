@@ -1721,9 +1721,24 @@ def hub_delete(version: str):
 # EXPLORE — Local export / import
 # ---------------------------------------------------------------------------
 
-@cli.group("explore")
-def explore():
-    """Explore, export, and import local qrag databases."""
+@cli.group("explore", invoke_without_command=True)
+@click.pass_context
+def explore(ctx):
+    """Explore local qrag databases. With no subcommand, open the interactive browser."""
+    if ctx.invoked_subcommand is not None:
+        return
+    # No subcommand → interactive browser, falling back to a plain list.
+    from . import explore as _explore
+    if sys.stdin.isatty() and sys.stdout.isatty():
+        from .tui import run_explore_browser
+        if run_explore_browser():
+            return
+    versions = _explore.gather_local_versions()
+    if not versions:
+        click.echo("No local databases found in ~/.qrag.")
+        click.echo("Build one with:  qrag build -i <path> -o <version>")
+        return
+    _render_version_table(versions)
 
 
 def _render_version_table(versions: list) -> None:
