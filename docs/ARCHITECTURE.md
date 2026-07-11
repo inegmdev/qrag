@@ -496,6 +496,7 @@ A grilling session refined AD-10 before implementation began. The command tree a
 - EXPLORE-A (#41) — `feat/explore-list-stats`: `explore.py` data layer + `explore list`/`explore stats` (local, lean panel).
 - EXPLORE-B (#42) — `feat/explore-github-remote`: `RemoteBackend` ABC + `@register_backend` registry + `GitHubBackend` (wraps `github_distribution.py`); `remotes{}` config with legacy `repo_url` auto-migration; unified `explore list --remote` and `explore download --remote` with origin tracking. `push`/`delete_remote` exist on the backend; their CLI surfaces in #45.
 - EXPLORE-C (#43) — `feat/explore-delete`: `explore delete <version>` — local-cache delete with size summary, `[y/N]` confirmation (`--yes` to skip, non-TTY guard), and auto-deactivation via `config.remove_active_version()`.
+- EXPLORE-D (#44) — `feat/explore-backends-remotes`: `HFBackend` (huggingface_hub SDK), `JFrogBackend` (`jf` CLI), `GitLFSBackend` (git + LFS via shallow clone), all self-registered; each lazily detects its tool (no new required deps). Registry management commands `add-remote` / `remove-remote` / `list-remotes` / `set-remote`. HF is unit-tested against a mocked SDK; JFrog and git+LFS are unit-tested at the command-construction level, with live-server coverage deferred behind `@pytest.mark.integration`.
 
 Remaining sub-issues follow the chain.
 

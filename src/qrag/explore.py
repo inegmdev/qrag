@@ -443,9 +443,287 @@ class GitHubBackend(RemoteBackend):
         delete_release(self.url, version)
 
 
+def _run_cli(cmd: list[str], binary: str) -> "subprocess.CompletedProcess":
+    """Run a subprocess, translating a missing binary into an actionable error."""
+    import subprocess
+    try:
+        return subprocess.run(cmd, capture_output=True, text=True)
+    except FileNotFoundError as e:
+        raise RemoteError(
+            f"'{binary}' not found — install it to use this remote."
+        ) from e
+
+
+@register_backend("huggingface")
+class HFBackend(RemoteBackend):
+    """HuggingFace Hub backend — uses the huggingface_hub SDK (a base dep).
+
+    A "version" is a top-level folder in a HF dataset repo holding
+    code.db / docs.db / config.json / manifest.json.
+    """
+
+    can_push = True
+    REPO_TYPE = "dataset"
+
+    def _repo_id(self) -> str:
+        url = self.url
+        for prefix in (
+            "https://huggingface.co/datasets/",
+            "https://huggingface.co/",
+            "hf://",
+            "datasets/",
+        ):
+            if url.startswith(prefix):
+                url = url[len(prefix):]
+                break
+        return url.strip("/")
+
+    def _token(self) -> str | None:
+        import os
+        token = os.getenv("HF_TOKEN")
+        if token:
+            return token
+        try:
+            from huggingface_hub import get_token
+            return get_token()
+        except Exception:
+            return None
+
+    def _api(self):
+        try:
+            from huggingface_hub import HfApi
+        except ImportError as e:
+            raise RemoteError(
+                "huggingface_hub is required for the 'huggingface' remote "
+                "(pip install huggingface_hub)."
+            ) from e
+        return HfApi(token=self._token())
+
+    def check_auth(self) -> None:
+        if not self._token():
+            raise RemoteError(
+                "No HuggingFace authentication. Set HF_TOKEN or run 'huggingface-cli login'."
+            )
+        try:
+            self._api().whoami()
+        except Exception as e:
+            raise RemoteError(f"HuggingFace authentication failed: {e}") from e
+
+    def _repo_files(self, api) -> list[str]:
+        try:
+            return api.list_repo_files(self._repo_id(), repo_type=self.REPO_TYPE)
+        except Exception as e:
+            raise RemoteError(f"Failed to list HuggingFace repo: {e}") from e
+
+    def list_versions(self) -> list[RemoteVersion]:
+        api = self._api()
+        repo_id = self._repo_id()
+        versions = set()
+        for path in self._repo_files(api):
+            parts = path.split("/")
+            if len(parts) >= 2 and parts[-1] in ("code.db", "docs.db", "manifest.json"):
+                versions.add(parts[0])
+        return [
+            RemoteVersion(
+                name=v, remote=self.name,
+                url=f"https://huggingface.co/datasets/{repo_id}/tree/main/{v}",
+            )
+            for v in sorted(versions)
+        ]
+
+    def download(self, version: str, dest_dir: Path) -> None:
+        from huggingface_hub import hf_hub_download
+        api = self._api()
+        files = [p for p in self._repo_files(api) if p.startswith(f"{version}/")]
+        if not files:
+            raise RemoteError(f"Version '{version}' not found on HuggingFace remote.")
+        target = dest_dir / version
+        target.mkdir(parents=True, exist_ok=True)
+        for path in files:
+            local = hf_hub_download(
+                self._repo_id(), path, repo_type=self.REPO_TYPE, token=self._token()
+            )
+            shutil.copy(local, target / Path(path).name)
+
+    def push(self, version: str, src_dir: Path, *, force: bool = False) -> None:
+        self._api().upload_folder(
+            folder_path=str(src_dir), path_in_repo=version,
+            repo_id=self._repo_id(), repo_type=self.REPO_TYPE,
+        )
+
+    def delete_remote(self, version: str) -> None:
+        self._api().delete_folder(
+            path_in_repo=version, repo_id=self._repo_id(), repo_type=self.REPO_TYPE,
+        )
+
+
+@register_backend("jfrog")
+class JFrogBackend(RemoteBackend):
+    """JFrog Artifactory backend via the `jf` CLI.
+
+    `url` is a generic-repo path (e.g. "my-repo/qrag"); the Artifactory
+    server itself is configured out-of-band via `jf c add` or JFROG_* env.
+    A "version" is a folder under that path.
+    """
+
+    can_push = True
+
+    def _base(self) -> str:
+        return self.url.strip("/")
+
+    def check_auth(self) -> None:
+        result = _run_cli(["jf", "rt", "ping"], "jf")
+        if result.returncode != 0:
+            raise RemoteError(
+                "JFrog not configured. Set JFROG_TOKEN/JFROG_URL or run 'jf c add'.\n"
+                + result.stderr.strip()
+            )
+
+    def list_versions(self) -> list[RemoteVersion]:
+        result = _run_cli(["jf", "rt", "search", f"{self._base()}/*/manifest.json"], "jf")
+        if result.returncode != 0:
+            raise RemoteError(f"JFrog search failed: {result.stderr.strip()}")
+        try:
+            hits = json.loads(result.stdout or "[]")
+        except json.JSONDecodeError as e:
+            raise RemoteError(f"Could not parse JFrog search output: {e}") from e
+        base = self._base()
+        versions = set()
+        for hit in hits:
+            path = hit.get("path", "")
+            rest = path[len(base):].strip("/") if path.startswith(base) else path
+            parts = rest.split("/")
+            if len(parts) >= 2:
+                versions.add(parts[0])
+        return [RemoteVersion(name=v, remote=self.name) for v in sorted(versions)]
+
+    def download(self, version: str, dest_dir: Path) -> None:
+        target = dest_dir / version
+        target.mkdir(parents=True, exist_ok=True)
+        result = _run_cli(
+            ["jf", "rt", "download", f"{self._base()}/{version}/(*)",
+             f"{target}/", "--flat"], "jf",
+        )
+        if result.returncode != 0:
+            raise RemoteError(f"JFrog download failed: {result.stderr.strip()}")
+
+    def push(self, version: str, src_dir: Path, *, force: bool = False) -> None:
+        result = _run_cli(
+            ["jf", "rt", "upload", f"{str(src_dir).rstrip('/')}/(*)",
+             f"{self._base()}/{version}/", "--flat"], "jf",
+        )
+        if result.returncode != 0:
+            raise RemoteError(f"JFrog upload failed: {result.stderr.strip()}")
+
+    def delete_remote(self, version: str) -> None:
+        result = _run_cli(
+            ["jf", "rt", "delete", f"{self._base()}/{version}/", "--quiet"], "jf",
+        )
+        if result.returncode != 0:
+            raise RemoteError(f"JFrog delete failed: {result.stderr.strip()}")
+
+
+@register_backend("gitlfs")
+class GitLFSBackend(RemoteBackend):
+    """git + LFS backend: a git repo where each version is a folder of DBs.
+
+    Operations run through a throwaway shallow clone. The *.db files are
+    tracked with git-lfs on push.
+    """
+
+    can_push = True
+
+    def check_auth(self) -> None:
+        # git carries its own credential handling; just verify the binary exists.
+        result = _run_cli(["git", "--version"], "git")
+        if result.returncode != 0:
+            raise RemoteError("git is not available.")
+
+    def _clone(self, workdir: Path) -> None:
+        result = _run_cli(
+            ["git", "clone", "--depth", "1", self.url, str(workdir)], "git"
+        )
+        if result.returncode != 0:
+            raise RemoteError(f"git clone failed: {result.stderr.strip()}")
+
+    def list_versions(self) -> list[RemoteVersion]:
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            work = Path(tmp) / "repo"
+            self._clone(work)
+            versions = [
+                d.name for d in work.iterdir()
+                if d.is_dir() and d.name != ".git"
+                and ((d / "code.db").exists() or (d / "docs.db").exists())
+            ]
+        return [RemoteVersion(name=v, remote=self.name) for v in sorted(versions)]
+
+    def download(self, version: str, dest_dir: Path) -> None:
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            work = Path(tmp) / "repo"
+            self._clone(work)
+            src = work / version
+            if not src.is_dir():
+                raise RemoteError(f"Version '{version}' not found in git remote.")
+            target = dest_dir / version
+            if target.exists():
+                shutil.rmtree(target)
+            shutil.copytree(src, target, ignore=shutil.ignore_patterns(".git"))
+
+    def _commit_push(self, work: Path, message: str) -> None:
+        for args in (["git", "add", "-A"],
+                     ["git", "commit", "-m", message],
+                     ["git", "push"]):
+            result = _run_cli(["git", "-C", str(work), *args[1:]], "git")
+            if result.returncode != 0 and "nothing to commit" not in (result.stdout + result.stderr):
+                raise RemoteError(f"git {' '.join(args[1:])} failed: {result.stderr.strip()}")
+
+    def push(self, version: str, src_dir: Path, *, force: bool = False) -> None:
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            work = Path(tmp) / "repo"
+            self._clone(work)
+            _run_cli(["git", "-C", str(work), "lfs", "track", "*.db"], "git")
+            target = work / version
+            if target.exists():
+                shutil.rmtree(target)
+            shutil.copytree(src_dir, target, ignore=shutil.ignore_patterns(".git"))
+            self._commit_push(work, f"qrag: publish {version}")
+
+    def delete_remote(self, version: str) -> None:
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            work = Path(tmp) / "repo"
+            self._clone(work)
+            target = work / version
+            if not target.is_dir():
+                raise RemoteError(f"Version '{version}' not found in git remote.")
+            shutil.rmtree(target)
+            self._commit_push(work, f"qrag: delete {version}")
+
+
 # ---------------------------------------------------------------------------
 # Remote resolution & operations
 # ---------------------------------------------------------------------------
+
+def backend_types() -> list[str]:
+    """All registered remote type names (for validation and listing)."""
+    return sorted(REGISTRY)
+
+
+def set_origin_remote(version: str, remote_name: str) -> None:
+    """Reassign which remote a local version is associated with."""
+    cfg_path = CACHE_DIR / version / "config.json"
+    data: dict = {}
+    if cfg_path.exists():
+        try:
+            data = json.loads(cfg_path.read_text())
+        except (json.JSONDecodeError, OSError):
+            data = {}
+    data["origin_remote"] = remote_name
+    cfg_path.parent.mkdir(parents=True, exist_ok=True)
+    cfg_path.write_text(json.dumps(data, indent=2))
 
 def resolve_remote(name: str | None = None) -> tuple[str, dict]:
     """Resolve a remote to (name, {type, url}).
