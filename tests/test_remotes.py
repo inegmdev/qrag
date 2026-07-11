@@ -5,10 +5,15 @@ network or `gh` CLI is touched.
 """
 import datetime
 import json
+import types
 
 import pytest
 
 from qrag import config, explore
+
+
+def _proc(returncode=0, stdout="", stderr=""):
+    return types.SimpleNamespace(returncode=returncode, stdout=stdout, stderr=stderr)
 
 
 # ---------------------------------------------------------------------------
@@ -176,3 +181,151 @@ def test_default_remote_prefers_default_key(temp_config):
     config.add_remote("default", "github", "u2")
     name, cfg = config.default_remote()
     assert name == "default" and cfg["url"] == "u2"
+
+
+# ---------------------------------------------------------------------------
+# Backend registry: all four types present + resolvable
+# ---------------------------------------------------------------------------
+
+def test_all_backends_registered():
+    assert set(explore.backend_types()) >= {"github", "huggingface", "jfrog", "gitlfs"}
+
+
+def test_get_backend_huggingface(monkeypatch):
+    monkeypatch.setattr(config, "get_remote",
+                        lambda n: {"type": "huggingface", "url": "org/repo"})
+    assert isinstance(explore.get_backend("hf"), explore.HFBackend)
+
+
+def test_run_cli_missing_binary(monkeypatch):
+    import subprocess
+    monkeypatch.setattr(subprocess, "run",
+                        lambda *a, **k: (_ for _ in ()).throw(FileNotFoundError()))
+    with pytest.raises(explore.RemoteError, match="'jf' not found"):
+        explore._run_cli(["jf", "rt", "ping"], "jf")
+
+
+# ---------------------------------------------------------------------------
+# HuggingFace backend (mocked SDK)
+# ---------------------------------------------------------------------------
+
+def test_hf_repo_id_parsing():
+    for url in ("https://huggingface.co/datasets/org/repo", "org/repo", "hf://org/repo"):
+        assert explore.HFBackend(url, "hf")._repo_id() == "org/repo"
+
+
+def test_hf_check_auth_no_token(monkeypatch):
+    b = explore.HFBackend("org/repo", "hf")
+    monkeypatch.setattr(b, "_token", lambda: None)
+    with pytest.raises(explore.RemoteError, match="No HuggingFace"):
+        b.check_auth()
+
+
+def test_hf_list_versions(monkeypatch):
+    b = explore.HFBackend("org/repo", "hf")
+    api = types.SimpleNamespace(
+        list_repo_files=lambda repo_id, repo_type: [
+            "v1/code.db", "v1/manifest.json", "v2/docs.db", "README.md",
+        ])
+    monkeypatch.setattr(b, "_api", lambda: api)
+    assert [v.name for v in b.list_versions()] == ["v1", "v2"]
+
+
+def test_hf_download_copies_only_version_files(tmp_path, monkeypatch):
+    import huggingface_hub
+    b = explore.HFBackend("org/repo", "hf")
+    api = types.SimpleNamespace(
+        list_repo_files=lambda repo_id, repo_type: ["v1/code.db", "v1/config.json", "v2/docs.db"])
+    monkeypatch.setattr(b, "_api", lambda: api)
+    monkeypatch.setattr(b, "_token", lambda: "tok")
+
+    downloads = tmp_path / "hf"
+    downloads.mkdir()
+
+    def fake_dl(repo_id, path, repo_type=None, token=None):
+        p = downloads / path.replace("/", "_")
+        p.write_text("data")
+        return str(p)
+
+    monkeypatch.setattr(huggingface_hub, "hf_hub_download", fake_dl)
+    dest = tmp_path / "cache"
+    dest.mkdir()
+    b.download("v1", dest)
+    assert (dest / "v1" / "code.db").exists()
+    assert (dest / "v1" / "config.json").exists()
+    assert not (dest / "v1" / "docs.db").exists()  # v2 excluded
+
+
+# ---------------------------------------------------------------------------
+# JFrog backend (mocked jf CLI)
+# ---------------------------------------------------------------------------
+
+def test_jfrog_list_versions(monkeypatch):
+    b = explore.JFrogBackend("my-repo/qrag", "jf")
+    hits = [{"path": "my-repo/qrag/v1/manifest.json"},
+            {"path": "my-repo/qrag/v2/manifest.json"}]
+    seen = {}
+
+    def fake_run(cmd, binary):
+        seen["cmd"] = cmd
+        return _proc(stdout=json.dumps(hits))
+
+    monkeypatch.setattr(explore, "_run_cli", fake_run)
+    assert [v.name for v in b.list_versions()] == ["v1", "v2"]
+    assert seen["cmd"][:3] == ["jf", "rt", "search"]
+
+
+def test_jfrog_list_versions_error(monkeypatch):
+    b = explore.JFrogBackend("my-repo/qrag", "jf")
+    monkeypatch.setattr(explore, "_run_cli", lambda cmd, binary: _proc(returncode=1, stderr="boom"))
+    with pytest.raises(explore.RemoteError, match="JFrog search failed"):
+        b.list_versions()
+
+
+# ---------------------------------------------------------------------------
+# git+LFS backend (mocked clone / git)
+# ---------------------------------------------------------------------------
+
+def test_gitlfs_check_auth(monkeypatch):
+    b = explore.GitLFSBackend("u", "git")
+    monkeypatch.setattr(explore, "_run_cli", lambda cmd, binary: _proc(stdout="git version 2.x"))
+    b.check_auth()  # no raise
+
+
+def test_gitlfs_list_versions(monkeypatch):
+    b = explore.GitLFSBackend("u", "git")
+
+    def fake_clone(work):
+        work.mkdir(parents=True)
+        (work / ".git").mkdir()
+        for v, db in (("v1", "code.db"), ("v2", "docs.db")):
+            (work / v).mkdir()
+            (work / v / db).write_text("x")
+        (work / "notes").mkdir()  # no db → excluded
+        (work / "notes" / "readme.txt").write_text("x")
+
+    monkeypatch.setattr(b, "_clone", fake_clone)
+    assert [v.name for v in b.list_versions()] == ["v1", "v2"]
+
+
+def test_gitlfs_download_missing_version(monkeypatch):
+    b = explore.GitLFSBackend("u", "git")
+    monkeypatch.setattr(b, "_clone", lambda work: work.mkdir(parents=True))
+    with pytest.raises(explore.RemoteError, match="not found in git remote"):
+        b.download("v9", explore.CACHE_DIR)
+
+
+# ---------------------------------------------------------------------------
+# set_origin_remote
+# ---------------------------------------------------------------------------
+
+def test_set_origin_remote(tmp_path, monkeypatch):
+    monkeypatch.setattr(explore, "CACHE_DIR", tmp_path)
+    (tmp_path / "v1").mkdir()
+    (tmp_path / "v1" / "config.json").write_text(
+        '{"origin_version": "v1", "embedding_model": "m"}')
+    explore.set_origin_remote("v1", "hf")
+    data = json.loads((tmp_path / "v1" / "config.json").read_text())
+    assert data["origin_remote"] == "hf"
+    assert data["origin_version"] == "v1"   # preserved
+    assert data["embedding_model"] == "m"   # preserved

@@ -1969,6 +1969,94 @@ def explore_delete(version: str, yes: bool):
     click.echo(f"✓ Deleted '{version}'" + (" and deactivated it." if was_active else "."))
 
 
+@explore.command("add-remote")
+@click.argument("name")
+@click.argument("url")
+@click.option("--type", "-t", "remote_type", default="github",
+              help="Backend type (github, huggingface, jfrog, gitlfs).")
+def explore_add_remote(name: str, url: str, remote_type: str):
+    """Register a named remote NAME pointing at URL."""
+    from . import explore as _explore
+    from .config import add_remote, get_remote
+
+    if remote_type not in _explore.backend_types():
+        click.echo(
+            f"Error: unknown remote type '{remote_type}'. "
+            f"Known: {', '.join(_explore.backend_types())}.", err=True)
+        sys.exit(1)
+    if get_remote(name):
+        click.echo(f"Remote '{name}' already exists — updating it.")
+    add_remote(name, remote_type, url)
+    click.echo(f"✓ Remote '{name}' → {remote_type}  {url}")
+
+
+@explore.command("remove-remote")
+@click.argument("name")
+def explore_remove_remote(name: str):
+    """Remove the named remote NAME."""
+    from .config import remove_remote
+    if remove_remote(name):
+        click.echo(f"✓ Removed remote '{name}'.")
+    else:
+        click.echo(f"Error: no remote named '{name}'.", err=True)
+        sys.exit(1)
+
+
+@explore.command("list-remotes")
+def explore_list_remotes():
+    """List configured remotes."""
+    from .config import default_remote, get_remotes
+
+    remotes = get_remotes()
+    if not remotes:
+        click.echo("No remotes configured.")
+        click.echo("Add one with:  qrag explore add-remote <name> --type github <url>")
+        return
+
+    dflt = default_remote()
+    default_name = dflt[0] if dflt else None
+
+    try:
+        from rich.box import SIMPLE_HEAVY
+        from rich.console import Console
+        from rich.table import Table
+    except ImportError:
+        for name, cfg in remotes.items():
+            flag = " (default)" if name == default_name else ""
+            click.echo(f"{name:<16} {cfg.get('type', ''):<12} {cfg.get('url', '')}{flag}")
+        return
+
+    table = Table(title="qrag remotes", box=SIMPLE_HEAVY, title_justify="left")
+    table.add_column("Name", style="bold cyan", no_wrap=True)
+    table.add_column("Type")
+    table.add_column("URL")
+    table.add_column("Default", justify="center")
+    for name, cfg in remotes.items():
+        table.add_row(name, cfg.get("type", ""), cfg.get("url", ""),
+                      "[green]●[/green]" if name == default_name else "")
+    Console().print(table)
+
+
+@explore.command("set-remote")
+@click.argument("version")
+@click.argument("remote")
+def explore_set_remote(version: str, remote: str):
+    """Reassign the origin REMOTE for a local VERSION."""
+    from . import explore as _explore
+    from .config import get_remote
+
+    if version not in _explore.local_version_names():
+        click.echo(f"Error: version '{version}' not found in ~/.qrag.", err=True)
+        sys.exit(1)
+    if not get_remote(remote):
+        click.echo(
+            f"Error: no remote named '{remote}'. "
+            "Add it with 'qrag explore add-remote'.", err=True)
+        sys.exit(1)
+    _explore.set_origin_remote(version, remote)
+    click.echo(f"✓ '{version}' origin set to '{remote}'.")
+
+
 @explore.command("export")
 @click.argument("version")
 @click.option("--output", "-o", type=click.Path(), default=None,
