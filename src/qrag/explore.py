@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import datetime
 import json
+import shutil
 import sqlite3
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
@@ -224,6 +225,20 @@ def gather_version(name: str) -> VersionInfo:
 
 def gather_local_versions() -> list[VersionInfo]:
     return [gather_version(name) for name in local_version_names()]
+
+
+def delete_local(name: str) -> bool:
+    """Delete a local version directory and drop it from active_versions.
+
+    Returns True if the version had been active. Rendering, summaries, and
+    confirmation are the caller's responsibility.
+    """
+    from .config import remove_active_version
+
+    version_dir = CACHE_DIR / name
+    if version_dir.exists():
+        shutil.rmtree(version_dir)
+    return remove_active_version(name)
 
 
 def compute_stats(name: str) -> VersionStats:
