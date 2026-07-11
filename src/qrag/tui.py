@@ -9,8 +9,9 @@ from __future__ import annotations
 import os
 from collections import deque
 from contextlib import contextmanager
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Iterator
+from typing import Any, Iterator
 
 from rich.console import Console, Group
 from rich.live import Live
@@ -390,3 +391,252 @@ class BuildLayout:
     def _push(self) -> None:
         if self._live is not None:
             self._live.update(self._render())
+
+
+# ===========================================================================
+# TreeView — reusable expandable/fuzzy tree widget (explore browser + diff)
+# ===========================================================================
+
+def fuzzy_match(query: str, text: str) -> bool:
+    """Case-insensitive subsequence match (the fuzzy filter used in the TUI)."""
+    if not query:
+        return True
+    it = iter(text.lower())
+    return all(ch in it for ch in query.lower())
+
+
+@dataclass
+class TreeNode:
+    label: str
+    key: str
+    data: Any = None
+    children: list["TreeNode"] = field(default_factory=list)
+    expanded: bool = False
+
+    @property
+    def is_branch(self) -> bool:
+        return bool(self.children)
+
+
+class TreeView:
+    """Pure navigation/selection model over a forest of TreeNodes.
+
+    All state transitions (move, toggle, filter) are side-effect-free on the
+    outside world, so they are unit-tested without any terminal. The
+    interactive loop (run_explore_browser / the diff viewer) renders .visible()
+    and feeds keypresses into these methods.
+    """
+
+    def __init__(self, roots: list[TreeNode]) -> None:
+        self.roots = roots
+        self.filter = ""
+        self.index = 0
+
+    def _matches(self, node: TreeNode) -> bool:
+        if not self.filter:
+            return True
+        if fuzzy_match(self.filter, node.label):
+            return True
+        return any(self._matches(c) for c in node.children)
+
+    def _flatten(self, nodes: list[TreeNode], depth: int, out: list) -> None:
+        for node in nodes:
+            if not self._matches(node):
+                continue
+            out.append((node, depth))
+            # A filter auto-expands branches that contain a match.
+            auto = bool(self.filter) and any(self._matches(c) for c in node.children)
+            if node.children and (node.expanded or auto):
+                self._flatten(node.children, depth + 1, out)
+
+    def visible(self) -> list[tuple[TreeNode, int]]:
+        out: list[tuple[TreeNode, int]] = []
+        self._flatten(self.roots, 0, out)
+        return out
+
+    def move(self, delta: int) -> None:
+        count = len(self.visible())
+        if count == 0:
+            self.index = 0
+            return
+        self.index = max(0, min(count - 1, self.index + delta))
+
+    @property
+    def current(self) -> TreeNode | None:
+        vis = self.visible()
+        if not vis:
+            return None
+        self.index = max(0, min(len(vis) - 1, self.index))
+        return vis[self.index][0]
+
+    def toggle(self) -> None:
+        node = self.current
+        if node is not None and node.children:
+            node.expanded = not node.expanded
+
+    def expand_current(self) -> None:
+        node = self.current
+        if node is not None and node.children:
+            node.expanded = True
+
+    def set_filter(self, text: str) -> None:
+        self.filter = text
+        self.index = 0
+
+    def render(self, empty_hint: str = "(nothing to show)") -> Group:
+        """Build a Rich renderable of the currently visible rows."""
+        vis = self.visible()
+        if not vis:
+            return Group(Text(empty_hint, style="dim"))
+        lines: list[Text] = []
+        for i, (node, depth) in enumerate(vis):
+            indent = "  " * depth
+            if node.children:
+                marker = "▾ " if (node.expanded or self.filter) else "▸ "
+            else:
+                marker = "  "
+            line = Text(f"{indent}{marker}{node.label}")
+            if i == self.index:
+                line.stylize("reverse")
+            lines.append(line)
+        return Group(*lines)
+
+
+# ===========================================================================
+# Interactive explore browser (qrag explore, no args) — #46
+# ===========================================================================
+
+def _version_nodes() -> list[TreeNode]:
+    """Build the version forest from the local cache (each version → detail children)."""
+    from . import explore as _explore
+
+    nodes: list[TreeNode] = []
+    for v in _explore.gather_local_versions():
+        marker = "●" if v.active else "○"
+        content = "+".join(k for k, present in (("code", v.has_code), ("docs", v.has_docs)) if present)
+        node = TreeNode(label=f"{marker} {v.name}  [{content}]", key=v.name, data=v)
+        langs = "  ".join(f"{lang} {pct:.0f}%" for lang, pct in _explore.lang_percentages(v.languages)) or "—"
+        origin = _explore.get_origin_remote(v.name) or "—"
+        node.children = [
+            TreeNode(f"size {_explore.human_size(v.size_bytes)} · built {_explore.human_age(v.built_at)}", key=v.name + ":size"),
+            TreeNode(f"symbols {v.symbols} · sections {v.sections} · docs {v.docs}", key=v.name + ":counts"),
+            TreeNode(f"languages: {langs}", key=v.name + ":langs"),
+            TreeNode(f"active: {'yes' if v.active else 'no'} · origin: {origin}", key=v.name + ":meta"),
+        ]
+        nodes.append(node)
+    return nodes
+
+
+_BROWSER_KEYS = (
+    "j/k move · space expand · ⏎ details · / filter · "
+    "a activate · d delete · p push · r refresh · q quit"
+)
+
+
+def run_explore_browser() -> bool:
+    """Interactive database browser. Returns False if readchar is unavailable
+    (so the caller can fall back to `explore list`)."""
+    try:
+        import readchar
+    except ImportError:
+        return False
+
+    from . import explore as _explore
+
+    console = Console()
+    tree = TreeView(_version_nodes())
+    message = ""
+
+    def draw() -> None:
+        console.clear()
+        body = tree.render(empty_hint="(no databases — build one with: qrag build)")
+        console.print(Panel(body, title="qrag explore", title_align="left", expand=True))
+        if message:
+            console.print(message)
+        console.print(Text(_BROWSER_KEYS, style="dim"))
+
+    def read_filter() -> str:
+        # simple line editor for the fuzzy filter
+        buf = tree.filter
+        while True:
+            tree.set_filter(buf)
+            console.clear()
+            console.print(Panel(tree.render(), title="qrag explore", title_align="left", expand=True))
+            console.print(Text(f"/{buf}", style="yellow"))
+            console.print(Text("type to filter · Enter apply · Esc clear", style="dim"))
+            key = readchar.readkey()
+            if key in (readchar.key.ENTER, "\r", "\n"):
+                return buf
+            if key == readchar.key.ESC:
+                return ""
+            if key in (readchar.key.BACKSPACE, "\x7f", "\b"):
+                buf = buf[:-1]
+            elif key.isprintable() and len(key) == 1:
+                buf += key
+
+    while True:
+        draw()
+        message = ""
+        try:
+            key = readchar.readkey()
+        except KeyboardInterrupt:
+            break
+
+        if key in ("q", readchar.key.ESC):
+            break
+        elif key in ("j", readchar.key.DOWN):
+            tree.move(1)
+        elif key in ("k", readchar.key.UP):
+            tree.move(-1)
+        elif key == " ":
+            tree.toggle()
+        elif key in (readchar.key.ENTER, "\r", "\n"):
+            tree.expand_current()
+        elif key == "/":
+            tree.set_filter(read_filter())
+        elif key == "r":
+            tree = TreeView(_version_nodes())
+            message = "[green]refreshed[/green]"
+        elif key in ("a", "d", "p"):
+            node = tree.current
+            if node is None or node.data is None:
+                continue
+            version = node.key.split(":")[0]
+            message = _browser_action(key, version, console)
+            tree = TreeView(_version_nodes())  # reflect the change
+
+    console.clear()
+    return True
+
+
+def _browser_action(key: str, version: str, console: Console) -> str:
+    """Run an a/d/p action on VERSION, returning a status message."""
+    from . import explore as _explore
+    from .config import add_active_version, remove_active_version
+
+    try:
+        if key == "a":
+            info = _explore.gather_version(version)
+            if info.active:
+                remove_active_version(version)
+                return f"[yellow]deactivated[/yellow] {version}"
+            add_active_version(version)
+            return f"[green]activated[/green] {version}"
+
+        if key == "d":
+            typed = console.input(f"Delete '{version}'? type the name to confirm: ")
+            if typed != version:
+                return "delete cancelled"
+            _explore.delete_local(version)
+            return f"[red]deleted[/red] {version}"
+
+        if key == "p":
+            backend = _explore.resolve_push_backend(version, None)
+            backend.check_auth()
+            backend.push(version, _explore.CACHE_DIR / version, force=False)
+            return f"[green]pushed[/green] {version} → {backend.name}"
+    except _explore.RemoteError as e:
+        return f"[red]error[/red] {e}"
+    except Exception as e:  # keep the browser alive on any action failure
+        return f"[red]error[/red] {e}"
+    return ""

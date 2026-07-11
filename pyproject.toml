@@ -29,6 +29,7 @@ build = [
     "html2text>=2024.2",
     "beautifulsoup4>=4.12",
     "rich>=13.0",
+    "readchar>=4.0",
 ]
 full = [
     "qrag[build]",
