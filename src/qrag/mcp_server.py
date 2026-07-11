@@ -16,6 +16,14 @@ from .embedder import embed_one
 
 _LOG_DIR = Path.home() / ".qrag" / "logs"
 
+# Session-scoped database selection (AD-17). Lives only in this process's
+# memory: stdio MCP transport spawns one server process per agent session,
+# so the process boundary already is the session boundary — no session-ID
+# scheme is needed. `_session_dbs=None` means "use the full global active
+# set"; a non-None value is a user-narrowed subset of it.
+_session_dbs: list[str] | None = None
+_session_scoped: bool = False
+
 
 def _log_error(message: str) -> None:
     """Append an error entry to ~/.qrag/logs/mcp_errors.log (never raises)."""
@@ -32,10 +40,52 @@ def _error_response(req_id, code: int, message: str) -> dict:
     return {"jsonrpc": "2.0", "id": req_id, "error": {"code": code, "message": message}}
 
 
-def _get_active_dbs() -> tuple[list[Path], list[Path]]:
-    """Return (code_dbs, docs_dbs) for all active versions that exist on disk."""
+def _global_active_versions() -> list[str]:
+    """The durable, CLI-managed candidate pool (`qrag ai active ...`)."""
     cfg = load_global()
-    versions = cfg.get("active_versions", [])
+    return cfg.get("active_versions", [])
+
+
+def _effective_versions() -> list[str]:
+    """Session-narrowed subset if set, else the full global active set."""
+    global_versions = _global_active_versions()
+    if _session_dbs is None:
+        return global_versions
+    return [v for v in _session_dbs if v in global_versions]
+
+
+def _excluded_active_dbs() -> list[str]:
+    """Globally active versions currently excluded by session narrowing."""
+    if _session_dbs is None:
+        return []
+    global_versions = _global_active_versions()
+    return [v for v in global_versions if v not in _session_dbs]
+
+
+def _scope_meta() -> dict:
+    """Fields appended to search results: fallback-suggestion + first-use nudge.
+
+    The server does no relevance matching of its own (AD-17) — it only
+    surfaces which globally active DBs are excluded from the current
+    session; the skill instructs the LLM to judge relevance itself.
+    """
+    meta: dict = {}
+    excluded = _excluded_active_dbs()
+    if excluded:
+        meta["excluded_active_dbs"] = excluded
+    if not _session_scoped:
+        global_versions = _global_active_versions()
+        if len(global_versions) > 1:
+            meta["scope_hint"] = (
+                f"Session not yet scoped — {len(global_versions)} databases "
+                "available via list_databases()"
+            )
+    return meta
+
+
+def _get_active_dbs() -> tuple[list[Path], list[Path]]:
+    """Return (code_dbs, docs_dbs) for all effective versions that exist on disk."""
+    versions = _effective_versions()
     if not versions:
         raise RuntimeError(
             "No active versions set. Run `qrag ai active <version>` first."
@@ -51,6 +101,56 @@ def _get_active_dbs() -> tuple[list[Path], list[Path]]:
         )
 
     return code_dbs, docs_dbs
+
+
+def list_databases_impl() -> list[dict]:
+    """List the globally active databases, for checklist rendering by the LLM."""
+    result = []
+    for v in _global_active_versions():
+        code_path = CACHE_DIR / v / "code.db"
+        docs_path = CACHE_DIR / v / "docs.db"
+        has_code = code_path.exists()
+        has_docs = docs_path.exists()
+        size_bytes = (code_path.stat().st_size if has_code else 0) + (
+            docs_path.stat().st_size if has_docs else 0
+        )
+        result.append(
+            {
+                "version": v,
+                "has_code": has_code,
+                "has_docs": has_docs,
+                "size_bytes": size_bytes,
+            }
+        )
+    return result
+
+
+def set_active_databases_impl(versions: list[str]) -> dict:
+    """Narrow the current session to a subset of the globally active DBs."""
+    global _session_dbs, _session_scoped
+
+    if not versions:
+        raise ValueError("versions must be a non-empty list")
+
+    global_versions = _global_active_versions()
+    unknown = [v for v in versions if v not in global_versions]
+    if unknown:
+        raise ValueError(
+            f"Unknown version(s) not in the globally active set: {unknown}. "
+            f"Globally active versions: {global_versions}"
+        )
+
+    _session_dbs = list(dict.fromkeys(versions))  # dedupe, preserve order
+    _session_scoped = True
+    return {"active_databases": _session_dbs}
+
+
+def reset_active_databases_impl() -> dict:
+    """Clear the session narrowing, reverting to the full global active set."""
+    global _session_dbs, _session_scoped
+    _session_dbs = None
+    _session_scoped = True
+    return {"active_databases": _global_active_versions()}
 
 
 def _merge_code(all_results: list[dict], top_k: int) -> list[dict]:
@@ -83,11 +183,11 @@ def _merge_docs(all_results: list[dict], top_k: int) -> list[dict]:
     return merged
 
 
-def search_code_impl(query: str) -> list[dict]:
-    """Semantic search across all active code databases."""
+def search_code_impl(query: str) -> dict:
+    """Semantic search across all session-scoped active code databases."""
     code_dbs, _ = _get_active_dbs()
     if not code_dbs:
-        return []
+        return {"results": [], **_scope_meta()}
 
     q_emb = embed_one(query)
     all_results: list[dict] = []
@@ -100,14 +200,14 @@ def search_code_impl(query: str) -> list[dict]:
             except Exception as e:
                 _log_error(f"search_code fan-out error ({futures[fut]}): {e}")
 
-    return _merge_code(all_results, top_k=10)
+    return {"results": _merge_code(all_results, top_k=10), **_scope_meta()}
 
 
-def search_docs_impl(query: str) -> list[dict]:
-    """Semantic search across all active docs databases."""
+def search_docs_impl(query: str) -> dict:
+    """Semantic search across all session-scoped active docs databases."""
     _, docs_dbs = _get_active_dbs()
     if not docs_dbs:
-        return []
+        return {"results": [], **_scope_meta()}
 
     q_emb = embed_one(query)
     all_results: list[dict] = []
@@ -120,14 +220,14 @@ def search_docs_impl(query: str) -> list[dict]:
             except Exception as e:
                 _log_error(f"search_docs fan-out error ({futures[fut]}): {e}")
 
-    return _merge_docs(all_results, top_k=10)
+    return {"results": _merge_docs(all_results, top_k=10), **_scope_meta()}
 
 
 def get_symbol_definition_impl(symbol: str) -> dict:
-    """Get the exact definition of a symbol, searching all active code databases."""
+    """Get the exact definition of a symbol, searching session-scoped active code databases."""
     code_dbs, _ = _get_active_dbs()
     if not code_dbs:
-        return {"error": "No active code databases found"}
+        return {"error": "No active code databases found", **_scope_meta()}
 
     for code_db in code_dbs:
         result = db_get_symbol(code_db, symbol)
@@ -139,16 +239,17 @@ def get_symbol_definition_impl(symbol: str) -> dict:
                 "line_start": result["line_start"],
                 "line_end": result["line_end"],
                 "code": result["code_text"],
+                **_scope_meta(),
             }
 
-    return {"error": f"Symbol '{symbol}' not found"}
+    return {"error": f"Symbol '{symbol}' not found", **_scope_meta()}
 
 
-def list_symbols_impl(pattern: str = "", limit: int = 200) -> list[dict]:
-    """List symbols across all active code databases, deduplicated by name."""
+def list_symbols_impl(pattern: str = "", limit: int = 200) -> dict:
+    """List symbols across session-scoped active code databases, deduplicated by name."""
     code_dbs, _ = _get_active_dbs()
     if not code_dbs:
-        return []
+        return {"symbols": [], **_scope_meta()}
 
     all_results: list[dict] = []
     for code_db in code_dbs:
@@ -164,7 +265,7 @@ def list_symbols_impl(pattern: str = "", limit: int = 200) -> list[dict]:
         if len(merged) >= limit:
             break
 
-    return merged
+    return {"symbols": merged, **_scope_meta()}
 
 
 # Tool definitions for MCP
@@ -220,6 +321,37 @@ TOOLS = {
             },
         },
         "impl": list_symbols_impl,
+    },
+    "list_databases": {
+        "description": "List the globally active databases (set via `qrag ai active`) available to select from for this session. Call this before rendering a database-selection checklist to the user, at the start of a conversation or when the user asks to change search scope.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+        },
+        "impl": list_databases_impl,
+    },
+    "set_active_databases": {
+        "description": "Narrow search to a subset of the globally active databases for the rest of this session only (does not change the user's global `qrag ai active` configuration). Must be a non-empty list of versions returned by list_databases; unknown versions are rejected.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "versions": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Versions to activate for this session, chosen from list_databases output",
+                }
+            },
+            "required": ["versions"],
+        },
+        "impl": set_active_databases_impl,
+    },
+    "reset_active_databases": {
+        "description": "Clear any session-level database narrowing and revert to searching the full globally active set. Use when the user asks to search everything again.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+        },
+        "impl": reset_active_databases_impl,
     },
 }
 

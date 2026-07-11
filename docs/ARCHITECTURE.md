@@ -715,3 +715,147 @@ sequenceDiagram
         P->>T: total changed → task._reset() (rare, acceptable)
     end
 ```
+
+---
+
+## AD-17: Session-Scoped Database Selection (LLM Context Narrowing)
+
+**Decision:** Add three new MCP tools — `list_databases`, `set_active_databases`,
+`reset_active_databases` — that let the AI agent narrow which of the *globally
+active* databases (`active_versions` in `~/.qrag/config.json`) are searched for
+the current conversation, without touching the global config file. The
+narrowed selection lives entirely in the running MCP server process's memory
+and is discarded when that process exits.
+
+**Why:** `qrag ai active v1 v2 v3` (AD-1) controls a durable, user-approved
+candidate pool, but users routinely leave many unrelated DBs in that pool and
+forget to trim it per-conversation. Fanning out search across every globally
+active DB on every query re-introduces the noisy, cross-project results
+multi-DB fan-out was supposed to keep useful — the LLM gets flooded with
+irrelevant hits and hallucinates. The fix is a second, session-scoped layer
+that narrows *which subset* of the already-approved pool gets searched in a
+given conversation, driven by the LLM on the user's behalf, without requiring
+a CLI round-trip or mutating the user's durable global choice.
+
+### Why No Session-ID Scheme Is Needed
+
+qrag's MCP server only ever runs over **stdio** (`cli.py`'s `_write_mcp_config`
+writes a `"command"` entry, not a URL) — every client (Claude Code, Gemini
+CLI, Antigravity) spawns its **own private subprocess** per agent session.
+There is no shared server handling multiple LLMs concurrently, so the OS
+process boundary already *is* the session boundary. A module-level variable
+in `mcp_server.py` is sufficient isolation; an explicit session-ID/token
+scheme would solve a problem (multi-tenant state collision) that cannot occur
+under stdio transport. This would need revisiting only if qrag ever adds an
+HTTP/SSE transport shared by multiple remote clients.
+
+```mermaid
+flowchart TD
+    subgraph "Agent Session A"
+        CA["Claude Code"] -->|spawns| PA["qrag mcp_server process A\n_session_dbs = {sdk-v1}"]
+    end
+    subgraph "Agent Session B"
+        CB["Gemini CLI"] -->|spawns| PB["qrag mcp_server process B\n_session_dbs = {rtos-v2, trm-v3}"]
+    end
+    CFG[("~/.qrag/config.json\nactive_versions: [sdk-v1, rtos-v2, trm-v3]\n(shared, read-only from here)")]
+    PA -.->|read at startup| CFG
+    PB -.->|read at startup| CFG
+```
+
+### Two-Tier Scope
+
+```mermaid
+flowchart LR
+    ALL["All downloaded DBs\n(on disk, CACHE_DIR)"]
+    ALL -->|"qrag ai active v1 v2 v3\n(durable, CLI-managed)"| GLOBAL["Global active set\nactive_versions"]
+    GLOBAL -->|"set_active_databases([...])\n(in-memory, per-process)"| SESSION["Session-scoped set\n(subset of global, default = global)"]
+    SESSION -->|"search_code / search_docs / etc."| RESULTS["Fan-out results"]
+```
+
+A session selection can only be a subset of the global set (Q4) — the
+checklist tool never offers, and `set_active_databases` never accepts, a DB
+outside `active_versions`. Fully deactivated DBs are invisible to the whole
+session-scoping feature, including the fallback-suggestion mechanism below;
+global deactivation is a deliberate, durable user choice that a mid-chat tool
+call must not second-guess.
+
+### Checklist Flow
+
+The interactive checklist itself is **not** an MCP protocol feature — the
+server's stdin/stdout are fully committed to JSON-RPC framing and cannot also
+carry raw keypresses. The checklist is rendered by the **agent's own host UI**
+(e.g. Claude Code's `AskUserQuestion` with `multiSelect: true`), driven by
+tool calls:
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant L as LLM (agent host)
+    participant M as mcp_server.py process
+
+    Note over L: first qrag tool call of the session,<br/>or user asks to re-narrow
+    L->>M: tools/call list_databases
+    M-->>L: [{version, has_code, has_docs, size_bytes}, ...]<br/>(global active_versions only)
+    L->>U: interactive checklist (arrow keys + spacebar)
+    U-->>L: selection + Enter
+    L->>M: tools/call set_active_databases([...])
+    alt selection empty or contains unknown version
+        M-->>L: error (hard reject, Q11/Q12)
+    else valid non-empty subset
+        M->>M: _session_dbs = selection\n_session_scoped = True
+        M-->>L: ok
+    end
+    L->>U: (skill instructs LLM to summarize the scoping decision)
+    L->>M: tools/call search_code / search_docs / ...
+    M-->>L: results + excluded_active_dbs field
+```
+
+### First-Use Gating: Server-Tracked, Not LLM-Remembered
+
+The server — not the LLM's conversational memory — is the source of truth for
+"has this session been scoped yet." A module-level `_session_scoped: bool`
+flag flips to `True` the first time `set_active_databases` succeeds in that
+process's lifetime. Since the process *is* the session, this flag needs no
+reconciliation across context-compaction or summarization: a new session is
+always a new process, always starting `_session_scoped = False`.
+
+Until scoped, `search_code`/`search_docs`/`get_symbol_definition`/
+`list_symbols` still answer against the *full* global set (unchanged default
+behavior — no regression for small global lists) but the response carries a
+`scope_hint` the skill instructions tell the LLM to act on once, e.g.:
+
+```json
+{"results": [...], "scope_hint": "Session not yet scoped — 5 databases available via list_databases()"}
+```
+
+### Fallback Suggestion (Excluded-But-Globally-Active DBs)
+
+Every `search_code`/`search_docs` response also carries `excluded_active_dbs`
+— the set difference `active_versions - _session_dbs` — computed for free
+from data already in memory (no new DB queries, no filesystem scan). The
+server does **no** relevance matching; the skill instructs the LLM to reason
+over that list itself (by name/keyword) when results look thin, and suggest
+reactivation to the user. This keeps `mcp_server.py`/`database.py` free of
+heuristic-tuning surface area and keeps the noisy-fallback-search cost at
+zero on the common path.
+
+```json
+{
+  "results": [ /* top-10 merged, from session-scoped DBs only */ ],
+  "excluded_active_dbs": ["legacy-sdk", "old-fw"]
+}
+```
+
+### New MCP Tools
+
+| Tool | Input | Behavior |
+|------|-------|----------|
+| `list_databases()` | — | Returns global `active_versions` with `{version, has_code, has_docs, size_bytes}` (cheap, filesystem-derived — no DB open) |
+| `set_active_databases(versions)` | `list[str]`, must be non-empty subset of global active set | Hard error on empty list or any unknown version (Q11/Q12); on success, sets `_session_dbs` + `_session_scoped = True` |
+| `reset_active_databases()` | — | Clears `_session_dbs` back to the full global set in one call (Q14) — no need to re-run the checklist selecting every box |
+
+**Trade-off:** Losing the running process (agent restart, MCP server crash)
+silently drops the session narrowing back to the full global set — there is
+no persistence by design (Q3). This is treated as acceptable: it fails open
+to previous multi-DB-fan-out behavior rather than failing closed, and a
+session that no longer exists has no state worth persisting.

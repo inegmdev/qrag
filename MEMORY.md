@@ -37,6 +37,7 @@
 | Rich TUI with progress bars + ETA | ✅ PR #20 |
 | Post-build audit report file | ✅ PR #20 |
 | Multi-database search (fan-out across N active DBs) | ✅ PR #16 |
+| Session-scoped database narrowing (`list_databases`/`set_active_databases`/`reset_active_databases`) | ✅ AD-17 |
 | Rich doc metadata (name, revision, status, page, section hierarchy) | ✅ PR #17 |
 | Rich code metadata (parent block, call depth, chunk index within parent) | ✅ PR #17 |
 | PyPI publish | ❌ Not done |
@@ -152,6 +153,7 @@ Full authoritative list: [`docs/BACKLOG.md`](docs/BACKLOG.md).
 | #60 | `claude/gpu-enabling-docs-la8bet` | Merged — AD-15: real-machine `qrag[gpu]` install hit `libcudart.so.13` — `onnxruntime-gpu`'s `<2.0` pin let the resolver pick 1.27.0, which needs CUDA 13 not 12. Retightened to `onnxruntime-gpu[cuda,cudnn]>=1.21,<1.27`, added `ort.preload_dlls()`, dropped system-wide CUDA Toolkit install steps from README (NVIDIA driver only now needed) |
 | #62 | `claude/gpu-enabling-docs-la8bet` | Open — awaiting review — docs-only: clarifies the `device_discovery.cc GetGpuDevices` sysfs warning is benign (confirmed on real GPU hardware, utilization spiked during build despite the warning) |
 | #61 | `claude/eta-embedding-display-scno5x` | Open — fix M8: embed row ETA stuck on `—` in `qrag build` TUI; `on_embed_batch()` was resetting Rich's speed samples every batch by pushing a jittery `total`. See AD-16. |
+| — | `claude/database-deactivation-llm-load-iggb26` | Open — AD-17: session-scoped database selection (`list_databases`/`set_active_databases`/`reset_active_databases` MCP tools + `SKILL_qrag.md` checklist workflow) |
 
 ---
 
@@ -171,6 +173,7 @@ Full authoritative list: [`docs/BACKLOG.md`](docs/BACKLOG.md).
 - **GPU detection is real** — `resolve_device()` checks `onnxruntime.get_available_providers()` for `CUDAExecutionProvider` instead of hardcoding CPU (AD-14)
 - **No system-wide CUDA Toolkit needed** — `[gpu]` pins `onnxruntime-gpu[cuda,cudnn]>=1.21,<1.27` (excludes 1.27.0, which needs CUDA 13 not 12) and calls `ort.preload_dlls()`; the CUDA/cuDNN runtime comes from pip packages, only the NVIDIA driver is a system-level requirement (AD-15)
 - **`qrag hub` → `qrag explore`** — hub is deprecated; explore replaces it with TUI + multi-remote support (AD-10)
+- **Session-scoped DB selection** (AD-17) — new `list_databases`/`set_active_databases`/`reset_active_databases` MCP tools let the LLM narrow the *globally active* DB set to a per-conversation subset, in-memory/per-process (stdio = 1 process per session, no session-ID needed); checklist UI rendered by the agent host, not the MCP server; fallback suggestions expose `excluded_active_dbs` but do no server-side relevance matching — LLM reasons over it
 - **Multi-remote backends** planned: GitHub Releases (current), HuggingFace Hub, JFrog Artifactory, git+LFS
 - **Origin tracking** — downloaded DBs store `origin_remote` in `~/.qrag/<v>/config.json`
 - **Keyword tags** — docs: top words from section titles; code: camelCase/snake_case token split from symbol names
