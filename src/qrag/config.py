@@ -74,6 +74,18 @@ def add_active_version(version: str) -> None:
     save_global(cfg)
 
 
+def remove_active_version(version: str) -> bool:
+    """Drop a version from the active list. Returns True if it was active."""
+    cfg = load_global()
+    versions = cfg.get("active_versions", [])
+    if version in versions:
+        versions.remove(version)
+        cfg["active_versions"] = versions
+        save_global(cfg)
+        return True
+    return False
+
+
 def repo_url() -> str | None:
     env_url = os.getenv("QRAG_GITHUB_URL")
     if env_url:

@@ -1935,6 +1935,40 @@ def explore_download(version: str, remote: str | None):
     click.echo(f"✓ Downloaded '{version}' from '{backend.name}'. Added to active versions.")
 
 
+@explore.command("delete")
+@click.argument("version")
+@click.option("--yes", "-y", is_flag=True, help="Delete without confirmation.")
+def explore_delete(version: str, yes: bool):
+    """Delete a local database VERSION from the cache (and deactivate it)."""
+    from . import explore as _explore
+    from .explore import human_age, human_size
+
+    if version not in _explore.local_version_names():
+        click.echo(f"Error: version '{version}' not found in ~/.qrag.", err=True)
+        available = _explore.local_version_names()
+        if available:
+            click.echo(f"Available: {', '.join(available)}", err=True)
+        sys.exit(1)
+
+    info = _explore.gather_version(version)
+    content = "+".join(k for k, present in (("code", info.has_code), ("docs", info.has_docs)) if present)
+    click.echo(f"About to delete '{version}':")
+    click.echo(f"  {content}  ·  {human_size(info.size_bytes)}  ·  built {human_age(info.built_at)}")
+    if info.active:
+        click.echo("  (currently active — it will be deactivated)")
+
+    if not yes:
+        if not sys.stdin.isatty():
+            click.echo("Error: deleting requires --yes in non-interactive mode.", err=True)
+            sys.exit(1)
+        if not click.confirm("Proceed?", default=False):
+            click.echo("Aborted.")
+            return
+
+    was_active = _explore.delete_local(version)
+    click.echo(f"✓ Deleted '{version}'" + (" and deactivated it." if was_active else "."))
+
+
 @explore.command("export")
 @click.argument("version")
 @click.option("--output", "-o", type=click.Path(), default=None,

@@ -125,6 +125,40 @@ class TestComputeStats:
             explore.compute_stats("nope")
 
 
+class TestDeleteLocal:
+    def test_deletes_dir_and_deactivates(self, cache, monkeypatch):
+        removed = {}
+        monkeypatch.setattr(explore, "CACHE_DIR", cache)
+        # delete_local imports remove_active_version from config at call time
+        from qrag import config
+        monkeypatch.setattr(config, "remove_active_version",
+                            lambda name: removed.setdefault(name, True) or True)
+        assert (cache / "v1").exists()
+        was_active = explore.delete_local("v1")
+        assert not (cache / "v1").exists()
+        assert was_active is True
+        assert removed == {"v1": True}
+
+    def test_delete_missing_dir_is_safe(self, cache, monkeypatch):
+        monkeypatch.setattr(explore, "CACHE_DIR", cache)
+        from qrag import config
+        monkeypatch.setattr(config, "remove_active_version", lambda name: False)
+        # never-built version: no dir, not active → returns False, no error
+        assert explore.delete_local("ghost") is False
+
+
+class TestRemoveActiveVersion:
+    def test_remove_active_version(self, tmp_path, monkeypatch):
+        from qrag import config
+        cfg_path = tmp_path / "config.json"
+        monkeypatch.setattr(config, "CACHE_DIR", tmp_path)
+        monkeypatch.setattr(config, "GLOBAL_CONFIG", cfg_path)
+        config.save_global({"active_versions": ["v1", "v2"]})
+        assert config.remove_active_version("v1") is True
+        assert config.load_global()["active_versions"] == ["v2"]
+        assert config.remove_active_version("v1") is False
+
+
 class TestFormatting:
     def test_lang_percentages(self):
         langs = [explore.LangCount("c", 2), explore.LangCount("cpp", 1)]
