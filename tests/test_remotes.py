@@ -392,3 +392,80 @@ def test_resolve_push_backend_readonly(monkeypatch):
     monkeypatch.setattr(config, "get_remote", lambda n: {"type": "readonly-test", "url": "u"})
     with pytest.raises(explore.RemoteError, match="read-only"):
         explore.resolve_push_backend("v1", "mirror")
+
+
+# ---------------------------------------------------------------------------
+# push --all-remotes (#48)
+# ---------------------------------------------------------------------------
+
+@explore.register_backend("ok-test")
+class _OkBackend(explore.RemoteBackend):
+    def check_auth(self):
+        ...
+
+    def list_versions(self):
+        return []
+
+    def download(self, version, dest_dir):
+        ...
+
+    def push(self, version, src_dir, *, force=False):
+        ...  # succeeds
+
+    def delete_remote(self, version):
+        ...
+
+
+@explore.register_backend("fail-test")
+class _FailBackend(explore.RemoteBackend):
+    def check_auth(self):
+        ...
+
+    def list_versions(self):
+        return []
+
+    def download(self, version, dest_dir):
+        ...
+
+    def push(self, version, src_dir, *, force=False):
+        raise explore.RemoteError("upload rejected")
+
+    def delete_remote(self, version):
+        ...
+
+
+def _wire_remotes(monkeypatch, remotes):
+    monkeypatch.setattr(config, "get_remotes", lambda: remotes)
+    monkeypatch.setattr(config, "get_remote", lambda n: remotes.get(n))
+
+
+def test_push_all_remotes_mixed(monkeypatch):
+    _wire_remotes(monkeypatch, {
+        "gh": {"type": "ok-test", "url": "u"},
+        "mirror": {"type": "readonly-test", "url": "u"},
+        "bad": {"type": "fail-test", "url": "u"},
+    })
+    outcomes = {o.remote: o for o in explore.push_all_remotes("v1")}
+    assert outcomes["gh"].status == "ok"
+    assert outcomes["mirror"].status == "skipped" and outcomes["mirror"].detail == "read-only"
+    assert outcomes["bad"].status == "failed" and "upload rejected" in outcomes["bad"].detail
+
+
+def test_push_all_remotes_continues_after_failure(monkeypatch):
+    # bad first, ok second → the ok one must still run
+    _wire_remotes(monkeypatch, {
+        "bad": {"type": "fail-test", "url": "u"},
+        "gh": {"type": "ok-test", "url": "u"},
+    })
+    statuses = {o.remote: o.status for o in explore.push_all_remotes("v1")}
+    assert statuses == {"bad": "failed", "gh": "ok"}
+
+
+def test_push_all_remotes_dry_run(monkeypatch):
+    _wire_remotes(monkeypatch, {
+        "gh": {"type": "ok-test", "url": "u"},
+        "mirror": {"type": "readonly-test", "url": "u"},
+    })
+    outcomes = {o.remote: o.status for o in explore.push_all_remotes("v1", dry_run=True)}
+    assert outcomes["gh"] == "dry-run"
+    assert outcomes["mirror"] == "skipped"  # read-only skipped even in dry-run

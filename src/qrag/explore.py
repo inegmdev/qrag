@@ -751,6 +751,43 @@ def resolve_push_backend(version: str, remote: str | None = None) -> RemoteBacke
     return backend
 
 
+@dataclass
+class PushOutcome:
+    remote: str
+    status: str  # "ok" | "skipped" | "failed" | "dry-run"
+    detail: str = ""
+
+
+def push_all_remotes(version: str, *, force: bool = False, dry_run: bool = False) -> list[PushOutcome]:
+    """Push VERSION to every configured remote, sequentially, continue-on-failure.
+
+    Read-only remotes are skipped; any per-remote failure is recorded and the
+    loop moves on (never aborts the whole run).
+    """
+    from .config import get_remotes
+
+    outcomes: list[PushOutcome] = []
+    for name in get_remotes():
+        try:
+            backend = get_backend(name)
+        except RemoteError as e:
+            outcomes.append(PushOutcome(name, "failed", str(e)))
+            continue
+        if not backend.can_push:
+            outcomes.append(PushOutcome(name, "skipped", "read-only"))
+            continue
+        if dry_run:
+            outcomes.append(PushOutcome(name, "dry-run"))
+            continue
+        try:
+            backend.check_auth()
+            backend.push(version, CACHE_DIR / version, force=force)
+            outcomes.append(PushOutcome(name, "ok"))
+        except Exception as e:  # keep going through the remaining remotes
+            outcomes.append(PushOutcome(name, "failed", str(e)))
+    return outcomes
+
+
 # ===========================================================================
 # Diff between two versions (#47)
 # ===========================================================================
