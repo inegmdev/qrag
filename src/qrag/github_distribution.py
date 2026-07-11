@@ -41,6 +41,41 @@ def _run_gh_cmd(args: list[str], check: bool = True) -> subprocess.CompletedProc
         sys.exit(1)
 
 
+def _repo_path(repo_url: str) -> str:
+    """Reduce a repo URL to the owner/repo path `gh` expects."""
+    if repo_url.endswith(".git"):
+        repo_url = repo_url[:-4]
+    return repo_url.split("github.com/", 1)[-1] if "github.com" in repo_url else repo_url
+
+
+def fetch_releases(repo_url: str) -> list[dict]:
+    """Return raw release dicts (tagName, name, publishedAt) for a repo.
+
+    Data-returning counterpart to `list_databases` (which prints). Used by the
+    explore GitHub backend. Raises RuntimeError if the `gh` call fails.
+    """
+    result = _run_gh_cmd([
+        "gh", "release", "list",
+        "--repo", _repo_path(repo_url),
+        "--json", "tagName,name,publishedAt",
+    ])
+    if result.returncode != 0:
+        raise RuntimeError(f"Failed to list releases: {result.stderr.strip()}")
+    try:
+        return json.loads(result.stdout or "[]")
+    except json.JSONDecodeError as e:
+        raise RuntimeError(f"Could not parse release list: {e}") from e
+
+
+def delete_release(repo_url: str, version: str) -> None:
+    """Delete a published release from the remote (used by protected remote delete)."""
+    _run_gh_cmd([
+        "gh", "release", "delete", version,
+        "--repo", _repo_path(repo_url),
+        "--yes",
+    ])
+
+
 def _compute_sha256(file_path: Path) -> str:
     """Compute SHA-256 hash of a file."""
     hash_obj = hashlib.sha256()
@@ -86,10 +121,7 @@ def push_to_github(
         )
         sys.exit(1)
 
-    # Extract owner/repo from URL
-    if repo_url.endswith(".git"):
-        repo_url = repo_url[:-4]
-    repo_path = repo_url.split("github.com/", 1)[-1] if "github.com" in repo_url else repo_url
+    repo_path = _repo_path(repo_url)
 
     # Check if release exists
     check_result = _run_gh_cmd(
@@ -152,10 +184,7 @@ def list_databases(repo_url: str) -> None:
         )
         sys.exit(1)
 
-    # Extract owner/repo from URL
-    if repo_url.endswith(".git"):
-        repo_url = repo_url[:-4]
-    repo_path = repo_url.split("github.com/", 1)[-1] if "github.com" in repo_url else repo_url
+    repo_path = _repo_path(repo_url)
 
     result = _run_gh_cmd([
         "gh", "release", "list",
@@ -195,10 +224,7 @@ def download_database(
         )
         sys.exit(1)
 
-    # Extract owner/repo from URL
-    if repo_url.endswith(".git"):
-        repo_url = repo_url[:-4]
-    repo_path = repo_url.split("github.com/", 1)[-1] if "github.com" in repo_url else repo_url
+    repo_path = _repo_path(repo_url)
 
     # Create output directory
     version_dir = output_dir / version

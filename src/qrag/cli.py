@@ -1804,16 +1804,97 @@ def _render_stats(stats) -> None:
             click.echo(f"  {line}")
 
 
-@explore.command("list")
-def explore_list():
-    """List local qrag databases with a per-version summary."""
-    from . import explore as _explore
-    versions = _explore.gather_local_versions()
-    if not versions:
-        click.echo("No local databases found in ~/.qrag.")
-        click.echo("Build one with:  qrag build -i <path> -o <version>")
+def _render_unified_table(rows: list) -> None:
+    """Render a merged local+remote listing (Rich if available, else plain)."""
+    from .explore import human_age, human_size, lang_percentages
+
+    def _langs(local, top: int = 3) -> str:
+        if local is None:
+            return ""
+        return "  ".join(f"{lang} {pct:.0f}%" for lang, pct in lang_percentages(local.languages)[:top])
+
+    def _size(row) -> str:
+        return human_size(row.local.size_bytes) if row.local else "—"
+
+    def _built(row) -> str:
+        if row.local:
+            return human_age(row.local.built_at)
+        if row.remote:
+            return human_age(row.remote.updated_at)
+        return "—"
+
+    try:
+        from rich.box import SIMPLE_HEAVY
+        from rich.console import Console
+        from rich.table import Table
+    except ImportError:
+        for row in rows:
+            active = " *" if (row.local and row.local.active) else ""
+            click.echo(
+                f"{row.name:<20} {row.location:<13} {_size(row):>9}  "
+                f"[{_langs(row.local)}]  {_built(row)}{active}"
+            )
+        click.echo("\n* = active   (activate with: qrag ai active <version>)")
         return
-    _render_version_table(versions)
+
+    table = Table(title="qrag databases", box=SIMPLE_HEAVY, title_justify="left")
+    table.add_column("Version", style="bold cyan", no_wrap=True)
+    table.add_column("Location")
+    table.add_column("Size", justify="right")
+    table.add_column("Languages")
+    table.add_column("Updated")
+    table.add_column("Active", justify="center")
+    for row in rows:
+        loc_styled = {
+            "local+remote": "[green]local+remote[/green]",
+            "local": "local",
+            "remote": "[dim]remote[/dim]",
+        }.get(row.location, row.location)
+        table.add_row(
+            row.name,
+            loc_styled,
+            _size(row),
+            _langs(row.local),
+            _built(row),
+            "[green]●[/green]" if (row.local and row.local.active) else "",
+        )
+    Console().print(table)
+
+
+@explore.command("list")
+@click.option("--remote", "-r", "remote", is_flag=False, flag_value="", default=None,
+              help="Also list versions from a remote (default remote if no name given).")
+def explore_list(remote: str | None):
+    """List local qrag databases (and optionally a remote's) with a summary."""
+    from . import explore as _explore
+
+    locals_ = _explore.gather_local_versions()
+
+    if remote is None:
+        if not locals_:
+            click.echo("No local databases found in ~/.qrag.")
+            click.echo("Build one with:  qrag build -i <path> -o <version>")
+            return
+        _render_version_table(locals_)
+        return
+
+    remotes: list = []
+    warning: str | None = None
+    try:
+        with _spinner("Fetching remote versions…"):
+            remotes = _explore.remote_versions(remote or None)
+    except Exception as e:  # RemoteError and any transport failure
+        warning = str(e)
+
+    if not locals_ and not remotes:
+        click.echo("No local databases found, and the remote returned nothing.")
+        if warning:
+            click.echo(f"Remote: {warning}", err=True)
+        return
+
+    _render_unified_table(_explore.merge_versions(locals_, remotes))
+    if warning:
+        click.echo(f"\nWarning: remote unavailable — {warning}", err=True)
 
 
 @explore.command("stats")
@@ -1828,6 +1909,30 @@ def explore_stats(version: str):
             click.echo(f"Available: {', '.join(available)}", err=True)
         sys.exit(1)
     _render_stats(_explore.compute_stats(version))
+
+
+@explore.command("download")
+@click.argument("version")
+@click.option("--remote", "-r", default=None,
+              help="Remote to download from (default remote if omitted).")
+def explore_download(version: str, remote: str | None):
+    """Download VERSION from a remote and register it as active."""
+    from . import explore as _explore
+    from .config import add_active_version
+
+    try:
+        backend = _explore.get_backend(remote)
+        backend.check_auth()
+    except _explore.RemoteError as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+
+    with _spinner(f"Downloading '{version}' from '{backend.name}'…"):
+        backend.download(version, CACHE_DIR)
+
+    _explore.write_origin(version, backend.name)
+    add_active_version(version)
+    click.echo(f"✓ Downloaded '{version}' from '{backend.name}'. Added to active versions.")
 
 
 @explore.command("export")

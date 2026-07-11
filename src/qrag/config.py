@@ -10,6 +10,7 @@ _DEFAULTS = {
     "repo_type": "github",
     "repo_url": "",
     "active_versions": [],
+    "remotes": {},
     "cache_dir": str(CACHE_DIR),
 }
 
@@ -34,6 +35,11 @@ def load_global() -> dict:
             old = merged.pop("active_version")
             if "active_versions" not in cfg:
                 merged["active_versions"] = [old] if old else []
+        # Migrate legacy single repo_url/repo_type → remotes["default"]
+        if not merged.get("remotes") and merged.get("repo_url"):
+            merged["remotes"] = {
+                "default": {"type": merged.get("repo_type", "github"), "url": merged["repo_url"]}
+            }
         return merged
     return dict(_DEFAULTS)
 
@@ -84,3 +90,43 @@ def set_repo_url(url: str) -> None:
 
 def manifest_path(version: str) -> Path:
     return CACHE_DIR / version / "manifest.json"
+
+
+# ---------------------------------------------------------------------------
+# Named remotes registry (multi-remote distribution)
+# ---------------------------------------------------------------------------
+
+def get_remotes() -> dict:
+    """Return the {name: {type, url}} remote registry."""
+    return load_global().get("remotes", {})
+
+
+def get_remote(name: str) -> dict | None:
+    return get_remotes().get(name)
+
+
+def default_remote() -> tuple[str, dict] | None:
+    """Return (name, cfg) of the default remote, or the first one, or None."""
+    remotes = get_remotes()
+    if "default" in remotes:
+        return "default", remotes["default"]
+    if remotes:
+        name = next(iter(remotes))
+        return name, remotes[name]
+    return None
+
+
+def add_remote(name: str, remote_type: str, url: str) -> None:
+    cfg = load_global()
+    cfg.setdefault("remotes", {})[name] = {"type": remote_type, "url": url}
+    save_global(cfg)
+
+
+def remove_remote(name: str) -> bool:
+    """Remove a remote by name. Returns True if it existed."""
+    cfg = load_global()
+    existed = name in cfg.get("remotes", {})
+    if existed:
+        del cfg["remotes"][name]
+        save_global(cfg)
+    return existed

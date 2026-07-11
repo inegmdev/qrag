@@ -12,6 +12,7 @@ from __future__ import annotations
 import datetime
 import json
 import sqlite3
+from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -285,3 +286,223 @@ def human_age(dt: datetime.datetime | None) -> str:
     if minutes >= 1:
         return f"{minutes}m ago"
     return "just now"
+
+
+# ===========================================================================
+# Remote backends
+# ===========================================================================
+#
+# Extensibility contract: a backend is any RemoteBackend subclass registered
+# with @register_backend("<type>"). Adding a new remote is one subclass + the
+# decorator — nothing else in the codebase changes. The config `type` field of
+# each entry in ~/.qrag/config.json:remotes selects the class. Entry-point
+# plugin discovery can be layered on later without touching this contract.
+
+@dataclass
+class RemoteVersion:
+    """A version available on a remote (one row on the remote side of a list)."""
+    name: str
+    remote: str
+    size_bytes: int | None = None
+    updated_at: datetime.datetime | None = None
+    url: str = ""
+
+
+@dataclass
+class ExploreRow:
+    """A version merged across local cache and a remote, keyed by name."""
+    name: str
+    local: VersionInfo | None = None
+    remote: RemoteVersion | None = None
+
+    @property
+    def location(self) -> str:
+        if self.local and self.remote:
+            return "local+remote"
+        return "local" if self.local else "remote"
+
+
+class RemoteError(RuntimeError):
+    """Raised for any remote-side failure (auth, network, unknown remote)."""
+
+
+class RemoteBackend(ABC):
+    """Uniform contract every distribution backend implements.
+
+    Transport is a backend detail (subprocess CLI, SDK, …). Each backend
+    lazily detects its tooling and raises RemoteError with an actionable
+    message only when actually used, so unused remotes cost nothing.
+    """
+
+    type: str = ""
+    can_push: bool = True
+
+    def __init__(self, url: str, name: str) -> None:
+        self.url = url
+        self.name = name
+
+    @abstractmethod
+    def check_auth(self) -> None:
+        """Raise RemoteError if the caller is not authenticated (pre-flight)."""
+
+    @abstractmethod
+    def list_versions(self) -> list[RemoteVersion]:
+        ...
+
+    @abstractmethod
+    def download(self, version: str, dest_dir: Path) -> None:
+        """Fetch VERSION into dest_dir/<version>/ (with checksum verification)."""
+
+    @abstractmethod
+    def push(self, version: str, src_dir: Path, *, force: bool = False) -> None:
+        ...
+
+    @abstractmethod
+    def delete_remote(self, version: str) -> None:
+        """Remove a published VERSION. The CLI guards this behind a confirmation."""
+
+
+REGISTRY: dict[str, type[RemoteBackend]] = {}
+
+
+def register_backend(type_name: str):
+    """Class decorator that registers a RemoteBackend under a config `type`."""
+    def _decorator(cls: type[RemoteBackend]) -> type[RemoteBackend]:
+        cls.type = type_name
+        REGISTRY[type_name] = cls
+        return cls
+    return _decorator
+
+
+def _parse_dt(value: str | None) -> datetime.datetime | None:
+    if not value:
+        return None
+    try:
+        return datetime.datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+@register_backend("github")
+class GitHubBackend(RemoteBackend):
+    """GitHub Releases backend — wraps github_distribution.py (the gh CLI)."""
+
+    can_push = True
+
+    def check_auth(self) -> None:
+        from .github_distribution import _get_github_token
+        if not _get_github_token():
+            raise RemoteError(
+                "No GitHub authentication. Set GITHUB_TOKEN or run 'gh auth login'."
+            )
+
+    def list_versions(self) -> list[RemoteVersion]:
+        from .github_distribution import fetch_releases
+        try:
+            releases = fetch_releases(self.url)
+        except RuntimeError as e:
+            raise RemoteError(str(e)) from e
+        versions = []
+        for rel in releases:
+            tag = rel.get("tagName") or rel.get("name") or ""
+            if not tag:
+                continue
+            versions.append(RemoteVersion(
+                name=tag,
+                remote=self.name,
+                updated_at=_parse_dt(rel.get("publishedAt")),
+                url=f"{self.url.rstrip('/')}/releases/tag/{tag}",
+            ))
+        return versions
+
+    def download(self, version: str, dest_dir: Path) -> None:
+        from .github_distribution import download_database
+        download_database(self.url, version, dest_dir)
+
+    def push(self, version: str, src_dir: Path, *, force: bool = False) -> None:
+        from .github_distribution import push_to_github
+        push_to_github(self.url, version, src_dir, force=force)
+
+    def delete_remote(self, version: str) -> None:
+        from .github_distribution import delete_release
+        delete_release(self.url, version)
+
+
+# ---------------------------------------------------------------------------
+# Remote resolution & operations
+# ---------------------------------------------------------------------------
+
+def resolve_remote(name: str | None = None) -> tuple[str, dict]:
+    """Resolve a remote to (name, {type, url}).
+
+    With a name: that named remote (error if unknown). Without: the configured
+    default remote, else a synthesized github default from the legacy repo_url /
+    QRAG_GITHUB_URL env for backward compatibility.
+    """
+    from .config import default_remote, get_remote, repo_url
+
+    if name:
+        cfg = get_remote(name)
+        if cfg is None:
+            raise RemoteError(f"No remote named '{name}' is configured.")
+        return name, cfg
+
+    dr = default_remote()
+    if dr is not None:
+        return dr
+
+    url = repo_url()
+    if url:
+        return "default", {"type": "github", "url": url}
+
+    raise RemoteError(
+        "No remote configured. Add one with:\n"
+        "  qrag explore add-remote <name> --type github <url>"
+    )
+
+
+def get_backend(name: str | None = None) -> RemoteBackend:
+    """Instantiate the RemoteBackend for a (possibly default) remote name."""
+    remote_name, cfg = resolve_remote(name)
+    remote_type = cfg.get("type", "github")
+    cls = REGISTRY.get(remote_type)
+    if cls is None:
+        raise RemoteError(
+            f"Unknown remote type '{remote_type}' for remote '{remote_name}'. "
+            f"Known types: {', '.join(sorted(REGISTRY)) or '(none)'}."
+        )
+    return cls(url=cfg["url"], name=remote_name)
+
+
+def remote_versions(name: str | None = None) -> list[RemoteVersion]:
+    """List versions on a remote (auth-checked). Raises RemoteError on failure."""
+    backend = get_backend(name)
+    backend.check_auth()
+    return backend.list_versions()
+
+
+def merge_versions(
+    locals_: list[VersionInfo], remotes: list[RemoteVersion]
+) -> list[ExploreRow]:
+    """Merge local and remote versions by name into a unified, sorted listing."""
+    rows: dict[str, ExploreRow] = {}
+    for v in locals_:
+        rows[v.name] = ExploreRow(name=v.name, local=v)
+    for r in remotes:
+        rows.setdefault(r.name, ExploreRow(name=r.name)).remote = r
+    return [rows[name] for name in sorted(rows)]
+
+
+def write_origin(version: str, remote_name: str) -> None:
+    """Record which remote a version was downloaded from, in its config.json."""
+    cfg_path = CACHE_DIR / version / "config.json"
+    data: dict = {}
+    if cfg_path.exists():
+        try:
+            data = json.loads(cfg_path.read_text())
+        except (json.JSONDecodeError, OSError):
+            data = {}
+    data["origin_remote"] = remote_name
+    data["origin_version"] = version
+    cfg_path.parent.mkdir(parents=True, exist_ok=True)
+    cfg_path.write_text(json.dumps(data, indent=2))

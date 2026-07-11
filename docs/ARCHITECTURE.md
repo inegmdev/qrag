@@ -492,7 +492,13 @@ A grilling session refined AD-10 before implementation began. The command tree a
 - **Diff (#47)** exposes an interactive expandable tree (Code: AST-tree ⇄ file-tree; Docs: file-tree) with fuzzy search, built on a reusable `TreeView` widget shared with the #46 browser, plus a `--json`/`--verbose` flat mode for CI.
 - **Testing:** data layer against real temp SQLite DBs; backends via mocked transport; real remotes behind `@pytest.mark.integration`.
 
-**Status:** EXPLORE-A (#41) implemented in `feat/explore-list-stats` — `explore.py` data layer + `explore list`/`explore stats` (local, lean panel). Remaining sub-issues follow the chain.
+**Status:**
+- EXPLORE-A (#41) — `feat/explore-list-stats`: `explore.py` data layer + `explore list`/`explore stats` (local, lean panel).
+- EXPLORE-B (#42) — `feat/explore-github-remote`: `RemoteBackend` ABC + `@register_backend` registry + `GitHubBackend` (wraps `github_distribution.py`); `remotes{}` config with legacy `repo_url` auto-migration; unified `explore list --remote` and `explore download --remote` with origin tracking. `push`/`delete_remote` exist on the backend; their CLI surfaces in #45.
+
+Remaining sub-issues follow the chain.
+
+**Remote resolution:** `resolve_remote(name)` → a named remote, else the configured `default`, else a github default synthesized from the legacy `repo_url`/`QRAG_GITHUB_URL` (backward compat), else an actionable error. `get_backend()` maps the remote's `type` through `REGISTRY` to a `RemoteBackend` instance.
 
 ### qrag explore Command Tree
 
