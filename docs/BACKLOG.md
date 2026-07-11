@@ -100,6 +100,8 @@ When starting a new session, review this file and prefer working on higher-sever
 
 - [ ] **L8** `chunker.py` — Shebang/content sniffing for extensionless scripts (e.g. `#!/usr/bin/env python`). Currently only extension and filename matching is used. Extensionless executable scripts in a project would be silently skipped.
 
+- [ ] **L9** `cli.py:main()` — Clean user errors trigger the scary "Something went wrong / a log file has been saved / report this issue" banner. Any command that calls `sys.exit(1)` for an expected error (e.g. `explore stats <bogus>` → "version not found", `hub list` → "No repo URL configured") is treated by `main()`'s `SystemExit`/`BaseException` handlers as a crash worth logging. Should distinguish expected user errors (clean message, exit 1, no log/banner) from unexpected exceptions (log + banner) — e.g. raise a dedicated `UserError`/`click.ClickException` that `main()` prints without the report banner.
+
 
 
 - [ ] **L1** `cli.py:851-904` — No deduplication when a result appears in both code and docs search output.
@@ -125,7 +127,7 @@ When starting a new session, review this file and prefer working on higher-sever
 > **GH#49 is the epic tracking issue.** Implement sub-issues in order #41 → #42 → #43 → #44 → #45 → #46 for vertical traceability. #47 and #48 are independent.
 
 - [ ] **GH#49** [EPIC] — `qrag explore` replaces `qrag hub` entirely; unified TUI + multi-remote database explorer. Tracking issue for GH#41–48. [GitHub](https://github.com/inegmdev/qrag/issues/49)
-- [ ] **GH#41** [EXPLORE-A] `cli.py`, `database.py` — MVP: `qrag explore list` (local Rich table) + `qrag explore stats <version>` (language %, symbol taxonomy, keyword tag cloud, staleness, coverage). Replaces `hub list`. [GitHub](https://github.com/inegmdev/qrag/issues/41)
+- [x] **GH#41** [EXPLORE-A] `explore.py`, `cli.py` — MVP: `qrag explore list` (local database table) + `qrag explore stats <version>`. Fixed in `feat/explore-list-stats`: new pure read-only data layer `src/qrag/explore.py` (`gather_local_versions`, `compute_stats`, `lang_percentages`, `human_size`, `human_age`) reads `~/.qrag/<version>/{code.db,docs.db}` without loading sqlite-vec; `cli.py` renders a Rich table (plain-text fallback when `rich` absent). Scope decision from the design grilling: **lean stats panel** (language %, symbol/section/doc/word counts, size, build date via newest DB mtime, active flag) — the keyword tag cloud and file-manifest "coverage" from the original ticket were **dropped**. Local-only; the `RemoteBackend` ABC and `remotes{}` config arrive in EXPLORE-B (#42). Tests in `tests/test_explore.py` (11). [GitHub](https://github.com/inegmdev/qrag/issues/41)
 - [ ] **GH#42** [EXPLORE-B] `cli.py`, `github_distribution.py` — GitHub remote integration: unified local+remote list, `explore download`, origin-remote stored in `~/.qrag/<v>/config.json`. Auth: `GITHUB_TOKEN` env → `gh` CLI. [GitHub](https://github.com/inegmdev/qrag/issues/42)
 - [ ] **GH#43** [EXPLORE-C] `cli.py`, `config.py` — `qrag explore delete <version>`: confirmation prompt with size summary, `--yes` flag, auto-deactivates from `active_versions`. [GitHub](https://github.com/inegmdev/qrag/issues/43)
 - [ ] **GH#44** [EXPLORE-D] `cli.py`, new backend modules — Additional remotes: HuggingFace Hub (`HF_TOKEN`/`huggingface-cli`), JFrog Artifactory (`JFROG_TOKEN`/`jf`), git+LFS. `explore add-remote`, `remove-remote`, `list-remotes`. [GitHub](https://github.com/inegmdev/qrag/issues/44)

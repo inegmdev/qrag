@@ -479,6 +479,21 @@ filename only       → gpio.c (truncated if still too long)
 
 **Trade-off:** `hub` is deprecated (hidden alias for one release cycle) before removal. New backend modules (HF Hub, JFrog, git+LFS) add optional runtime deps only when those remotes are configured.
 
+### Revised design decisions (design grilling — sequenced delivery)
+
+A grilling session refined AD-10 before implementation began. The command tree and multi-remote vision below still hold; these points amend the specifics, and the epic ships as **sequenced, merge-as-you-go PRs** in the #41→…→#48 dependency order.
+
+- **Code layout:** a single `src/qrag/explore.py` holds the data layer *and* all backends; `cli.py` stays thin wrappers; interactive views live in `tui.py`.
+- **`hub` is retained (not hidden).** `explore` **wraps** the existing `github_distribution.py` rather than replacing it; `hub` stays visible. `github_distribution.py` is kept as the GitHub transport.
+- **Remote config:** a `remotes{}` dict keyed by name in `~/.qrag/config.json`; the legacy single `repo_url`/`repo_type` auto-migrates to `remotes["default"]` (same pattern as `active_version`→`active_versions`).
+- **Extensibility is first-class:** a `RemoteBackend` ABC + `@register_backend("type")` decorator registry. Adding a backend = one subclass, no other edits. Contract: `check_auth`, `list_versions`, `download`, `push`, `can_push`, and a **protected** `delete_remote` (CLI wraps it in a strong confirmation). Entry-point plugin discovery is deferred but the lookup is designed to accept it later.
+- **TUI engine:** Rich + `readchar` (a small key-input loop), not a heavyweight framework — keeps install lean.
+- **Stats are lean:** language %, symbol/section/doc/word counts, size, build date, active flag. The **keyword tag cloud and file-manifest "coverage"** originally sketched here are **dropped** (no consumer justified the cost).
+- **Diff (#47)** exposes an interactive expandable tree (Code: AST-tree ⇄ file-tree; Docs: file-tree) with fuzzy search, built on a reusable `TreeView` widget shared with the #46 browser, plus a `--json`/`--verbose` flat mode for CI.
+- **Testing:** data layer against real temp SQLite DBs; backends via mocked transport; real remotes behind `@pytest.mark.integration`.
+
+**Status:** EXPLORE-A (#41) implemented in `feat/explore-list-stats` — `explore.py` data layer + `explore list`/`explore stats` (local, lean panel). Remaining sub-issues follow the chain.
+
 ### qrag explore Command Tree
 
 ```mermaid

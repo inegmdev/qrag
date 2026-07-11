@@ -1723,7 +1723,111 @@ def hub_delete(version: str):
 
 @cli.group("explore")
 def explore():
-    """Export and import local qrag databases as ZIP files."""
+    """Explore, export, and import local qrag databases."""
+
+
+def _render_version_table(versions: list) -> None:
+    """Render `qrag explore list` — Rich table if available, plain text otherwise."""
+    from .explore import human_age, human_size, lang_percentages
+
+    def _content(v) -> str:
+        return "+".join(k for k, present in (("code", v.has_code), ("docs", v.has_docs)) if present)
+
+    def _langs(v, top: int = 3) -> str:
+        pcts = lang_percentages(v.languages)[:top]
+        return "  ".join(f"{lang} {pct:.0f}%" for lang, pct in pcts)
+
+    try:
+        from rich.box import SIMPLE_HEAVY
+        from rich.console import Console
+        from rich.table import Table
+    except ImportError:
+        for v in versions:
+            flag = " *" if v.active else ""
+            click.echo(
+                f"{v.name:<20} {_content(v):<9} {human_size(v.size_bytes):>9}  "
+                f"sym={v.symbols:<6} sec={v.sections:<5} [{_langs(v)}]  "
+                f"{human_age(v.built_at)}{flag}"
+            )
+        click.echo("\n* = active   (activate with: qrag ai active <version>)")
+        return
+
+    table = Table(title="qrag databases", box=SIMPLE_HEAVY, title_justify="left")
+    table.add_column("Version", style="bold cyan", no_wrap=True)
+    table.add_column("Content")
+    table.add_column("Size", justify="right")
+    table.add_column("Symbols", justify="right")
+    table.add_column("Sections", justify="right")
+    table.add_column("Languages")
+    table.add_column("Built")
+    table.add_column("Active", justify="center")
+    for v in versions:
+        table.add_row(
+            v.name,
+            _content(v),
+            human_size(v.size_bytes),
+            f"{v.symbols:,}",
+            f"{v.sections:,}",
+            _langs(v),
+            human_age(v.built_at),
+            "[green]●[/green]" if v.active else "",
+        )
+    Console().print(table)
+
+
+def _render_stats(stats) -> None:
+    """Render `qrag explore stats VERSION` — lean panel (Rich if available)."""
+    from .explore import human_age, human_size, lang_percentages
+
+    lang_line = "  ".join(f"{lang} {pct:.0f}%" for lang, pct in lang_percentages(stats.languages)) or "—"
+    header = f"{human_age(stats.built_at)} · {human_size(stats.size_bytes)}"
+    if stats.active:
+        header += " · active"
+    if stats.embedding_model:
+        header += f" · {stats.embedding_model}"
+
+    lines = [header]
+    if stats.has_code:
+        lines.append(f"Code: {stats.code_chunks:,} chunks · {stats.symbols:,} symbols")
+        lines.append(f"  {lang_line}")
+    if stats.has_docs:
+        lines.append(f"Docs: {stats.sections:,} sections · {stats.docs:,} docs · {stats.words:,} words")
+
+    try:
+        from rich.console import Console
+        from rich.panel import Panel
+        Console().print(Panel("\n".join(lines), title=f"[bold]{stats.name}[/bold]",
+                              title_align="left", expand=False))
+    except ImportError:
+        click.echo(f"{stats.name}")
+        for line in lines:
+            click.echo(f"  {line}")
+
+
+@explore.command("list")
+def explore_list():
+    """List local qrag databases with a per-version summary."""
+    from . import explore as _explore
+    versions = _explore.gather_local_versions()
+    if not versions:
+        click.echo("No local databases found in ~/.qrag.")
+        click.echo("Build one with:  qrag build -i <path> -o <version>")
+        return
+    _render_version_table(versions)
+
+
+@explore.command("stats")
+@click.argument("version")
+def explore_stats(version: str):
+    """Show detailed statistics for a local database VERSION."""
+    from . import explore as _explore
+    if version not in _explore.local_version_names():
+        click.echo(f"Error: version '{version}' not found in ~/.qrag.", err=True)
+        available = _explore.local_version_names()
+        if available:
+            click.echo(f"Available: {', '.join(available)}", err=True)
+        sys.exit(1)
+    _render_stats(_explore.compute_stats(version))
 
 
 @explore.command("export")
