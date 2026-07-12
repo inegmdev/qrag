@@ -94,13 +94,21 @@ When starting a new session, review this file and prefer working on higher-sever
 
 - [x] **M8** `tui.py:271-299` — Embed row's ETA column always showed `—` during `qrag build`. Root cause: `on_embed_batch()` recomputed the embed task's `total` on every batch from a jittery rolling estimate, and Rich's `Progress.update()` calls `task._reset()` (wiping the speed-sample history) whenever `total` changes — so `time_remaining` never had two samples to compute a speed from. Fixed by only updating `total` when the new estimate drifts >10% from the current value. See AD-16.
 
+- [ ] **GH#53** `cli.py`, `embedder.py`, `tui.py` — Real-time live log file during `qrag build`: log records are currently buffered in memory and only flushed on failure, so a long embedding run gives no way to tail progress from another terminal/SSH session. Open an unbuffered `~/.qrag/logs/build-<timestamp>.log` at build start (plus a `build-latest.log` symlink), print the path, and log per-batch embedding progress. [GitHub](https://github.com/inegmdev/qrag/issues/53)
+
+- [ ] **GH#74** `explore.py` — Live-server integration tests for JFrog and git+LFS backends: currently only unit-tested at the command-construction level (`tests/test_remotes.py`), never exercised against a real Artifactory/git+LFS remote. Add opt-in tests behind `@pytest.mark.integration` covering the full push → list → download → delete round-trip. Follow-up from GH#44/GH#49. [GitHub](https://github.com/inegmdev/qrag/issues/74)
+
 ---
 
 ## Low — Nice-to-Have
 
 - [ ] **L8** `chunker.py` — Shebang/content sniffing for extensionless scripts (e.g. `#!/usr/bin/env python`). Currently only extension and filename matching is used. Extensionless executable scripts in a project would be silently skipped.
 
-- [ ] **L9** `cli.py:main()` — Clean user errors trigger the scary "Something went wrong / a log file has been saved / report this issue" banner. Any command that calls `sys.exit(1)` for an expected error (e.g. `explore stats <bogus>` → "version not found", `hub list` → "No repo URL configured") is treated by `main()`'s `SystemExit`/`BaseException` handlers as a crash worth logging. Should distinguish expected user errors (clean message, exit 1, no log/banner) from unexpected exceptions (log + banner) — e.g. raise a dedicated `UserError`/`click.ClickException` that `main()` prints without the report banner.
+- [ ] **L9** `cli.py:main()` — Clean user errors trigger the scary "Something went wrong / a log file has been saved / report this issue" banner. Any command that calls `sys.exit(1)` for an expected error (e.g. `explore stats <bogus>` → "version not found", `hub list` → "No repo URL configured") is treated by `main()`'s `SystemExit`/`BaseException` handlers as a crash worth logging. Should distinguish expected user errors (clean message, exit 1, no log/banner) from unexpected exceptions (log + banner) — e.g. raise a dedicated `UserError`/`click.ClickException` that `main()` prints without the report banner. Also tracked as **GH#75**. [GitHub](https://github.com/inegmdev/qrag/issues/75)
+
+- [ ] **GH#76** `explore.py` — Entry-point plugin discovery for `RemoteBackend`: the registry supports in-repo backends via `@register_backend`, but external pip-package plugins via `importlib.metadata.entry_points("qrag.remotes")` aren't wired up yet. Deferred item from the explore epic GH#49. [GitHub](https://github.com/inegmdev/qrag/issues/76)
+
+- [ ] **GH#54** `README.md` — WSL2 + CUDA workaround doc for uv-managed installs; superseded in practice by the onnxruntime migration (GH#38, resolved) but the issue itself (documenting the old torch/CUDA workaround) remains open. [GitHub](https://github.com/inegmdev/qrag/issues/54)
 
 
 
@@ -139,4 +147,8 @@ When starting a new session, review this file and prefer working on higher-sever
 - [x] **GH#48** [EXPLORE-H] `explore.py`, `cli.py` — `qrag explore push <version> --all-remotes`. Fixed in `feat/explore-push-all`: `push_all_remotes()` iterates every configured remote sequentially, skips `can_push=False` backends, and is **continue-on-failure** (a per-remote error is recorded and the loop moves on). The CLI prints a per-remote status line (✓ ok · skipped · ✗ failed · ? dry-run) and, on any failure, lists the exact `qrag explore push <v> --remote <r>` re-run commands and exits 1. Tests in `tests/test_remotes.py`. [GitHub](https://github.com/inegmdev/qrag/issues/48)
 
 - [x] **GH#26** `cli.py`, `tui.py` — Rich TUI improvements: proportional CPU split (GH#27), MVC extraction to `tui.py`, scrolling log panel, worker-count header, parse `files/s` rate, status line with live error/warning counts, smart path truncation, `fmt_eta` formatter, terminal-too-small fallback, spinners on hub/search commands. Fixed in `feat/gh26-tui-improvements`. [GitHub](https://github.com/inegmdev/qrag/issues/26)
+
+- [ ] **GH#64** `database.py`, `github_distribution.py`, `cli.py` — Version-controlled database distribution with incremental SQL-row deltas: add a stable `content_hash` column to `code_chunks`/`doc_sections`, generate self-inverting `FORWARD`/`ROLLBACK` `.sql` delta files between revisions, and make `explore push`/`download`/`rollback`/`diff` delta-aware instead of always transferring full databases. [GitHub](https://github.com/inegmdev/qrag/issues/64)
+
+- [ ] **GH#63** `doc_parser.py`, `pyproject.toml` — Parse Office document formats (`.docx`, `.xlsx`, `.pptx`, `.csv`, `.odt`, `.rtf`) alongside existing PDF/HTML support, using pure-Python libraries (`python-docx`, `openpyxl`, `python-pptx`, `striprtf`) with no system-level dependencies. New `doc_type` values feed the existing `search_docs` filter. [GitHub](https://github.com/inegmdev/qrag/issues/63)
 
